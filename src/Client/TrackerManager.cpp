@@ -170,6 +170,7 @@ void TrackerManager::disarm_timer(ev::timer& timer) {
 }
 
 void TrackerManager::tracker_timeout_handler(ev::timer& timer, int revents) {
+  (void)revents;
   timer.stop();
   Tracker* trkr = reinterpret_cast<Tracker*>(timer.data);
   if(!trkr->nest.bool_set.only_one_timer && !trkr->nest.bool_set.interruptible) {
@@ -190,6 +191,7 @@ inline void TrackerManager::block_until_ready_events_then_handle_for_transition(
 }
 
 void TrackerManager::state_change_handler(ev::io& watcher, int revents) {
+  (void) watcher; (void) revents;
   uint64_t buffer;
   eventfd_read(state_change_signal_fd, &buffer);
 }

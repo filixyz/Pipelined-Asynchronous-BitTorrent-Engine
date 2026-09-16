@@ -138,7 +138,7 @@ namespace handshake {
 
       if ( range == pstrlen ) {
 
-        if ( io_view.size() < 1 )   continue;
+        if ( io_view.size() < 1 ) continue;
 
         decode_resolve.valid = static_cast<std::uint8_t>(io_view[0]) == 0x13;
         io_view = io_view.subspan(1);

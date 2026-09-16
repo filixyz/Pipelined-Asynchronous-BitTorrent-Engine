@@ -26,7 +26,7 @@ std::string Hasher::hex_stringify_hash(const std::span<std::byte, N>& byte_seque
 }
 
 template <std::size_t N>
-std::string Hasher::byte_stringify_hash(const std::span<std::byte, N>& byte_sequence) {
+std::string Hasher::byte_stringify_hash(const std::span<const std::byte, N>& byte_sequence) {
   std::string byte_string;
   for(auto byt : byte_sequence)
     byte_string += static_cast<std::string::value_type>(byt);

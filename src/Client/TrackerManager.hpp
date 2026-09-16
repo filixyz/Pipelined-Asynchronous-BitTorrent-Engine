@@ -5,20 +5,55 @@
 #include "PeerManager.hpp"
 #include "UDPHandler.hpp"
 #include "TorrentFile.hpp"
-#include <chrono>
 #include <cstdint>
 #include <ev++.h>
 #include <unordered_map>
-#include "ThreadMessageTypes.hpp"
+
+enum class tracker_state_t: std::uint8_t {
+  null,
+  inactive,
+  active,
+  failed
+};
+
+enum class tracker_timer_t: std::uint8_t {
+  one_timer,
+  two_timer,
+};
+
+enum class tracker_proto_t {
+  http,
+  udp,
+};
+
+struct tracker_bools_t {
+  bool interruptible;
+  bool requeable;
+};
 
 class TrackerManager {
   class Tracker;
   struct trkr_context_t {
-    std::int64_t uploaded{0};  std::int64_t downloaded{0}; std::int64_t left{}; int compact{1}; };
+    std::uint64_t uploaded{0};
+    std::uint64_t downloaded{0};
+    std::uint64_t left{};
+    int compact{1};
+  };
   struct protocol_handle_t {
-    const HTTPHandler http; UDPHandler udp; protocol_handle_t(ev::dynamic_loop&);void add_request(Tracker*) const; };
-  enum class tracker_event:short { started=0, stopped=1, completed=2, update=3, };
-  const std::array<std::string, 4> event_strings { "&event=started", "&event=stopped", "&event=completed", "" };
+    const HTTPHandler http;
+    UDPHandler udp;
+    protocol_handle_t(ev::dynamic_loop&);
+    void add_request(Tracker*) const;
+  };
+  enum class tracker_event:short {
+    started=0,
+    stopped=1,
+    completed=2,
+    update=3,
+  };
+  const std::array<std::string, 4> event_strings {
+    "&event=started", "&event=stopped", "&event=completed", ""
+  };
 
   ev::dynamic_loop event_loop;
   ev::io state_event_wtc;
