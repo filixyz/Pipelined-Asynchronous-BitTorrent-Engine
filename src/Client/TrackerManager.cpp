@@ -178,10 +178,7 @@ void TrackerManager::tracker_timeout_handler(ev::timer& timer, int revents) {
     return;
   }
 
-  const auto event = (
-    clock::now() - tracker.manager.started_tp < startup_window &&
-    tracker.state == tracker_state_t::inactive
-  )
+  const auto event = clock::now() - tracker.manager.started_tp < startup_window
     ? tracker_event::started
     : tracker.manager.tracker_context.event;
 
