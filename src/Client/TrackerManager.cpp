@@ -4,6 +4,7 @@
 #include "Hasher.hpp"
 #include "TorrentFile.hpp"
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cstdlib>
 #include <ctime>
@@ -22,11 +23,18 @@ TrackerManager::protocol_handle_t::protocol_handle_t(ev::dynamic_loop& ev_loop) 
 {}
 
 void TrackerManager::protocol_handle_t::add_request(Tracker* trkr) const {
- if(trkr->current_proto == tracker_proto_t::http)
-   http.add_request(trkr);
- else  {
-   // not implemented.
- }
+
+  switch (trkr->current_proto) {
+
+  case tracker_proto_t::http :
+    http.add_request(trkr);                   break;
+  case tracker_proto_t::udp :
+    { /* not implemented */ }                 break;
+  default:
+    {}
+
+  }
+
 }
 
 std::string get_hostname(std::string_view url) {
@@ -37,22 +45,28 @@ std::string get_hostname(std::string_view url) {
 }
 
 void TrackerManager::initiatlize_trackers(std::vector<std::string_view> trackers_urls) {
+
   auto tag_http_presence = [](std::string_view url, Tracker& trkr) {
-    if(url.starts_with("http")) trkr.context.has_http = true;
-  };
+    if (url.starts_with("http")) trkr.context.has_http = true;
+  }; // udp failsafe delete lambda when udp backend implemented.
 
   for(auto url : trackers_urls) {
     auto key = get_hostname(url);
-    if (tracker_connections.contains(key)) {
-      tracker_connections[key].announce_urls.list.push_back(std::string(url));
-      tag_http_presence(url, tracker_connections[key]);
-      continue;
+    auto [current_spot, fresh]  = tracker_connections.try_emplace(key, *this);
+    auto& current               = current_spot->second;
+    if (fresh) { // initializer should have its own seperat function
+      current.announce_urls.domain_name = key;
+      current.timers.maximum.set(event_loop);
+      current.timers.minimum.set(event_loop);
+      current.timers.maximum.set<&TrackerManager::tracker_timeout_handler> ();
+      current.timers.minimum.set<&TrackerManager::tracker_timeout_handler> ();
+      current.timers.maximum.data = &current;
+      current.timers.minimum.data = &current;
     }
-    auto& current = ( tracker_connections.emplace(key, *this) ).first->second;
-    tag_http_presence(url, tracker_connections[key]);
-    current.timers.maximum.set(event_loop);
-    current.timers.minimum.set(event_loop);
+    tag_http_presence(url, current);
+    current.announce_urls.list.push_back(std::string(url));
   }
+
 }
 
 void TrackerManager::populate_manager_space() {
@@ -62,9 +76,11 @@ void TrackerManager::populate_manager_space() {
   for(auto& pair: tracker_connections) {
     auto& trkr = pair.second;
 
-    if (!trkr.context.has_http) {   continue;  }
-    while (trkr.current_proto != tracker_proto_t::http)
-      trkr.seek_to_next_url();
+    { // udp failsafe remove when udp backend implemented
+      if (!trkr.context.has_http) {   continue;  }
+      while (trkr.current_proto != tracker_proto_t::http)
+        trkr.seek_to_next_url();
+    }
 
     trkr.context.manager_space_idx = manager_space.size();
     manager_space.push_back(&trkr);
@@ -87,11 +103,9 @@ int TrackerManager::initialize_libev() {
 }
 
 void TrackerManager::initialize_state_system() {
-  while((event_signal.fd = eventfd(0, EFD_CLOEXEC|EFD_NONBLOCK))==-1); // possible bug
-  event_signal.watcher.set(event_signal.fd, ev::READ);
-  event_signal.watcher.set(event_loop);
-  event_signal.watcher.set <TrackerManager, &TrackerManager::state_change_handler> (this);
-  event_signal.watcher.start();
+  event_signal.set(event_loop);
+  event_signal.set <TrackerManager, &TrackerManager::handle_event> (this);
+  event_signal.start();
 }
 
 TrackerManager::TrackerManager(TorrentFile& torrent_, int port)
@@ -188,49 +202,31 @@ void TrackerManager::tracker_timeout_handler(ev::timer& timer, int revents) {
 
 }
 
-inline void TrackerManager::block_until_ready_events_then_handle_for_transition() {
-  event_loop.run(ev::ONCE);
-}
-
-void TrackerManager::state_change_handler(ev::io& watcher, int revents) {
-  (void) watcher; (void) revents;
-
-  uint64_t buffer;
-  eventfd_read(event_signal.fd, &buffer);
-
-}
-
-void TrackerManager::start_state() {
+void TrackerManager::start_event() {
 
   populate_manager_space();
 
   for(auto __tracker : manager_space) {
+
     auto& tracker = * __tracker;
-    tracker.context.requeable_permission = true;
+    assert(tracker.state == tracker_state_t::null);
 
-    if(tracker.state == tracker_state_t::null) {
-      tracker.state = tracker_state_t::inactive;
-      tracker.timers.maximum.set<&TrackerManager::tracker_timeout_handler> ();
-      tracker.timers.minimum.set<&TrackerManager::tracker_timeout_handler> ();
-      tracker.timers.maximum.data = &tracker;
-      tracker.timers.minimum.data = &tracker;
-      arm_timer(tracker.timers.maximum, 0.0);
-      continue;
-    }
+    tracker.state = tracker_state_t::inactive;
 
-    arm_timer(tracker.timers.maximum, tracker.timers.maximum_duration);
-    if(tracker.timers.type == timer_count::two)
-      arm_timer(tracker.timers.minimum, tracker.timers.minimum_duration);
+    while (tracker.current_proto != tracker_proto_t::http) // udp failsafe
+      tracker.seek_to_next_url();
+
+    arm_timer(tracker.timers.maximum, 0.0);
+
   }
 
-  current_state=&TrackerManager::normal_state;
+  started_tp = clock::now();
+
 }
 
-void TrackerManager::normal_state() {
-  block_until_ready_events_then_handle_for_transition();
-}
 
-void TrackerManager::reannounce_state() {
+void TrackerManager::reannounce_event() {
+
   for(Tracker* trkr : manager_space) {
     auto& tracker = * trkr;
 
@@ -242,35 +238,36 @@ void TrackerManager::reannounce_state() {
       // since we are doing what the normal interval would had done we should disarm the main
       // interval timer. so epoll doesnt wake on it
       disarm_timer(tracker.timers.maximum);
-      set_announce_url_for_tracker(*trkr, tracker_event::update);
-      trkr->send_to_protocol_space();
+      set_announce_url_for_tracker(tracker, tracker_event::update);
+      tracker.send_to_protocol_space();
       protocol.add_request(trkr);
     }
 
   }
-  current_state=&TrackerManager::normal_state;
+
 }
 
-void TrackerManager::force_reannounce_state() {
+void TrackerManager::force_reannounce_event() {
+
   for(Tracker* trkr : manager_space) {
     auto& tracker = * trkr;
     if(tracker.state == tracker_state_t::active) {
       disarm_timer(tracker.timers.minimum);
       disarm_timer(tracker.timers.maximum);
-      set_announce_url_for_tracker(*trkr, tracker_event::update);
-      trkr->send_to_protocol_space();
+      set_announce_url_for_tracker(tracker, tracker_event::update);
+      tracker.send_to_protocol_space();
       protocol.add_request(trkr);
     }
   }
-  current_state=&TrackerManager::normal_state;
+
 }
 
-void TrackerManager::shutdown_state() {
+void TrackerManager::shutdown_event() {
+
   for( Tracker* trkr : manager_space) {
     auto& tracker = * trkr;
 
     disarm_timer(tracker.timers.maximum);
-    tracker.context.requeable_permission = false;
     tracker.send_to_protocol_space();
 
     if (tracker.state == tracker_state_t::inactive)
@@ -280,53 +277,91 @@ void TrackerManager::shutdown_state() {
       disarm_timer(tracker.timers.minimum);
 
     tracker_event current_ev = tracker_context.left==0 ? tracker_event::completed : tracker_event::stopped;
-    set_announce_url_for_tracker(*trkr, current_ev);
+    set_announce_url_for_tracker(tracker, current_ev);
     protocol.add_request(trkr);
   }
 
-  if (manager_space.empty())  current_state=&TrackerManager::inactive_state;
 }
 
-void TrackerManager::inactive_state() {
-  ;
+inline void TrackerManager::wait_for_event() {
+  event_loop.run();
 }
+
+void TrackerManager::handle_event() {
+
+  std::uint8_t event = event_set.load(std::memory_order_acquire) ;
+  std::uint8_t handled = 0;
+
+  if ( event & start_mask && !tracker_context.active ) {
+    start_event();
+    tracker_context.active = true;
+    handled |= start_mask;
+  }
+
+  if ( event & shutdown_mask && tracker_context.active ) {
+    shutdown_event();
+    tracker_context.active = false;
+    handled |= shutdown_mask | reannounce_mask | force_reannounce_mask;
+  }
+
+  if ( tracker_context.active ) {
+
+    if (event & force_reannounce_mask) {
+      force_reannounce_event();
+      handled |= force_reannounce_mask | reannounce_mask;
+      event &= ~reannounce_mask;
+    }
+
+    if (event & reannounce_mask)  {
+      reannounce_event();
+      handled |= reannounce_mask;
+    }
+
+  }
+
+  auto previous = event_set.fetch_and(~handled, std::memory_order_acq_rel);
+  // incase when processing this (possibly) coalesced invocation
+  // a new event arrives and libev only schedules coalesced event before
+  // callback invocation
+  if ( previous & ~handled )
+    event_signal.feed_event(1);
+
+}
+
+void TrackerManager::dormant_event() {}
 
 void TrackerManager::start_tracker_manager() {
-  std::cout << "tracker service is online\n";
-  current_state = &TrackerManager::inactive_state;
-  while(tracker_context.running) {
-    (this->*current_state)();
-  }
-  std::cout << "tracker service is offline\n";
+
+  wait_for_event();
+
 };
 
 void TrackerManager::start() {
-  if(current_state!=&TrackerManager::inactive_state)
-    return;
-  std::cout << "Starting sequence initiated\n";
-  current_state=&TrackerManager::start_state;
-  eventfd_write(event_signal.fd, 1);
+
+  event_set.fetch_or(start_mask, std::memory_order_acq_rel);
+  event_signal.send();
+
 }
 
 void TrackerManager::reannounce() {
-  if(current_state!=&TrackerManager::normal_state)
-    return;
-  current_state=&TrackerManager::reannounce_state;
-  eventfd_write(event_signal.fd, 1);
+
+  event_set.fetch_or(reannounce_mask, std::memory_order_acq_rel);
+  event_signal.send();
+
 }
 
 void TrackerManager::force_reannounce() {
-  if(current_state!=&TrackerManager::normal_state)
-    return;
-  current_state=&TrackerManager::force_reannounce_state;
-  eventfd_write(event_signal.fd, 1);
+
+  event_set.fetch_or(force_reannounce_mask, std::memory_order_acq_rel);
+  event_signal.send();
+
 }
 
 void TrackerManager::shutdown() {
-  if(current_state!=&TrackerManager::normal_state)
-    return;
-  current_state=&TrackerManager::shutdown_state;
-  eventfd_write(event_signal.fd, 1);
+
+  event_set.fetch_or(shutdown_mask, std::memory_order_acq_rel);
+  event_signal.send();
+
 }
 
 void TrackerManager::update_context(std::size_t dwn, std::size_t upd) {

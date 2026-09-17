@@ -4,6 +4,7 @@
 #include "HTTPHandler.hpp"
 #include "UDPHandler.hpp"
 #include "TorrentFile.hpp"
+#include <atomic>
 #include <cstdint>
 #include <ev++.h>
 #include <unordered_map>
@@ -15,23 +16,31 @@ enum class tracker_state_t: std::uint8_t {
   active,
 };
 
-enum class tracker_proto_t {
+enum class tracker_proto_t: std::uint8_t {
   null,
   http,
   udp,
 };
 
-enum class timer_count {
+enum class timer_count: std::uint8_t {
   one,
   two,
 };
 
 struct tracker_context_t {
+  bool online {false};
   bool interruptible {false};
-  bool requeable_permission {false};
   bool has_http {false}; // udp failsafe
   std::size_t failures {0};
   std::size_t manager_space_idx{0};
+
+  inline void reset() {
+    online = false;
+    interruptible = false;
+    failures = 0;
+    manager_space_idx = 0;
+  };
+
 };
 
 struct tracker_timers_t {
@@ -40,12 +49,26 @@ struct tracker_timers_t {
   int maximum_duration{0};
   ev::timer maximum {};
   timer_count type {timer_count::one};
+
+  inline void reset() {
+    minimum_duration = 0;
+    maximum_duration = 0;
+    type = timer_count::one;
+  }
+
 };
 
 struct announce_list_t {
   std::vector<std::string> list;
-  std::size_t current_idx;
-  std::size_t failed_idx;
+  std::string domain_name;
+  std::size_t current_idx {0};
+  std::size_t failed_idx {0};
+
+  inline void reset() {
+    failed_idx = 0;
+    current_idx = 0;
+    failed_idx = 0;
+  }
 };
 
 enum class tracker_event:std::size_t {
@@ -56,14 +79,14 @@ enum class tracker_event:std::size_t {
 };
 
 struct manager_context_t {
-  std::uint64_t uploaded{0};
-  std::uint64_t downloaded{0};
-  std::uint64_t left{};
+  std::size_t uploaded{0};
+  std::size_t downloaded{0};
+  std::size_t left{};
   tracker_event event {tracker_event::update};
   int port;
   int compact{1};
   std::string escaped_info_hash_byte;
-  bool running=true;
+  bool active = false;
 };
 
 
@@ -77,6 +100,13 @@ const std::array<std::string, 4> event_strings {
 struct event_signal_t {
   ev::io watcher;
   int fd;
+};
+
+enum manager_event : std::uint8_t {
+  start_mask             = std::uint8_t{1}<<0,
+  reannounce_mask        = std::uint8_t{1}<<1,
+  force_reannounce_mask  = std::uint8_t{1}<<2,
+  shutdown_mask          = std::uint8_t{1}<<3,
 };
 
 class TrackerManager {
@@ -100,36 +130,34 @@ private:
   std::chrono::steady_clock::time_point started_tp {};
 
   ev::dynamic_loop event_loop;
+  ev::async event_signal;
+  std::atomic<std::uint8_t> event_set {0};
 
-  event_signal_t event_signal;
   protocol_handle_t protocol;
   manager_context_t tracker_context;
   tracker_store_t tracker_connections;
   manager_space_t manager_space;
-
-  void (TrackerManager::*current_state)();
 
   void initialize_info_hash_byte(TorrentFile&);
   void initialize_tracker_context(TorrentFile&);
   void initiatlize_trackers(std::vector<std::string_view>);
   int  initialize_libev();
   void initialize_state_system();
-
   void populate_manager_space();
 
   void static arm_timer(ev::timer&, double);
   void static disarm_timer(ev::timer&);
   int  static get_retry_seconds(const Tracker*);
   void static tracker_timeout_handler(ev::timer& timer, int revents);
-  void state_change_handler(ev::io&, int revents);
-  void block_until_ready_events_then_handle_for_transition();
 
-  void start_state();
-  void normal_state();
-  void reannounce_state();
-  void force_reannounce_state();
-  void shutdown_state();
-  void inactive_state();
+  void handle_event();
+  void wait_for_event();
+
+  void start_event();
+  void dormant_event();
+  void reannounce_event();
+  void force_reannounce_event();
+  void shutdown_event();
 
   std::string get_request_params() const;
   void set_announce_url_for_tracker(Tracker&, tracker_event) const;
@@ -147,7 +175,6 @@ public:
   void force_reannounce();
   void shutdown();
   void update_context(std::size_t, std::size_t);
-  void scrape_trackers();
 };
 
 class TrackerManager::Tracker: public HTTPRequest {
@@ -162,9 +189,19 @@ class TrackerManager::Tracker: public HTTPRequest {
 
   void do_on_success() override;
   void do_on_failure() override;
+  void active_state_handler(ben::dic& parsed);
+  void inactive_state_handler();
 
   void send_to_protocol_space();
   void return_to_manager_space();
+
+  inline void shutdown_reset() {
+    state = tracker_state_t::null;
+    current_proto = tracker_proto_t::null;
+    context.reset();
+    timers.reset();
+    announce_urls.reset();
+  }
 
   void seek_to_next_url();
   friend TrackerManager;
