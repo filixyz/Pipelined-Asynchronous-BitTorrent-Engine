@@ -109,6 +109,13 @@ enum manager_event : std::uint8_t {
   shutdown_mask          = std::uint8_t{1}<<3,
 };
 
+struct event_system_t {
+  ev::dynamic_loop loop;
+  ev::async signal;
+  std::atomic<std::uint8_t> set {0};
+  event_system_t(int x ) : loop(x){}
+};
+
 class TrackerManager {
 
   class Tracker;
@@ -121,7 +128,7 @@ class TrackerManager {
   };
 
   static constexpr std::chrono::seconds startup_window {30};
-  using clock = std::chrono::steady_clock;
+  using clock           = std::chrono::steady_clock;
   using tracker_store_t = std::unordered_map<std::string, TrackerManager::Tracker>;
   using manager_space_t = std::vector<Tracker*>;
 
@@ -129,10 +136,7 @@ private:
 
   std::chrono::steady_clock::time_point started_tp {};
 
-  ev::dynamic_loop event_loop;
-  ev::async event_signal;
-  std::atomic<std::uint8_t> event_set {0};
-
+  event_system_t event;
   protocol_handle_t protocol;
   manager_context_t tracker_context;
   tracker_store_t tracker_connections;

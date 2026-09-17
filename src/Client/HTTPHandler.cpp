@@ -60,6 +60,7 @@ void HTTPHandler::rmv_request(HTTPRequest* request) const {
 }
 
 void HTTPHandler::chk_finished(CURLM* multi) {
+
   CURLMsg *msg;
   int msg_left;
 
@@ -80,17 +81,19 @@ void HTTPHandler::chk_finished(CURLM* multi) {
       request->do_on_failure();
     curl_multi_remove_handle(multi, easy);
   }
+
 }
 
 // handle networks events in the supplied
 // socket.data is "this" pointer of current HttpHandler object'
 void HTTPHandler::drive_sockt(ev::io& socket, int revents) {
-  std::cout << "Someone just drove" << '\n';
+
   auto actions = ( revents&ev::READ?CURL_CSELECT_IN:0 ) | ( revents&ev::WRITE?CURL_CSELECT_OUT:0 );
   HTTPHandler* http = static_cast<HTTPHandler*>(socket.data);
   CURLMcode cRes = curl_multi_socket_action(http->multi, socket.fd, actions, &http->actives);
-  // code to handle cRes Goes here
+  (void)cRes;// code to handle cRes Goes here
   chk_finished(http->multi);
+
 }
 
 // Need a way to get this pointer in static function
@@ -99,20 +102,24 @@ void HTTPHandler::drive_sockt(ev::io& socket, int revents) {
 // 2. Pointer arithmetics with C STL offset(type_name, type_member_name)
 // will be going with once since easier to think about
 void HTTPHandler::drive_timer(ev::timer& timer, int revents) {
-  std::cout << "http timer callback\n";
+
+  (void) revents;
   HTTPHandler* http = static_cast<HTTPHandler*>(timer.data);
   CURLMcode cRes = curl_multi_socket_action(http->multi, CURL_SOCKET_TIMEOUT, 0, &http->actives);
+  (void) cRes;
   // code to handle cRes Goes here
   chk_finished(http->multi);
+
 }
 
 size_t HTTPHandler::easy_callback(const char* data, size_t size, size_t datalen, void *user_data) {
-  std::cout << "easy callback\n";
+
   network_data *mem = (network_data *) (user_data);
   if (!mem) return 0;
   mem->data += data;
   mem->size += datalen;
   return size * datalen;
+
 }
 
 void HTTPHandler::remove_socket(ev::io* socket_watcher) {
@@ -126,14 +133,17 @@ void HTTPHandler::add_socket(curl_socket_t fd, ev::io* watcher, CURL* easy, int 
   curl_multi_assign(easy, fd, watcher);
   watcher->set<HTTPHandler::drive_sockt>(httpG);
   set_socket(fd, watcher, action);
+
 }
 
 void HTTPHandler::set_socket(curl_socket_t fd, ev::io* watcher, int what) {
+
   auto actions = (what & CURL_POLL_IN ? ev::READ : 0) | (what & CURL_POLL_OUT ? ev::WRITE : 0);
   if (actions==0) return;
   if (watcher->active) watcher->stop();
   watcher->set(fd, actions);
   watcher->start();
+
 }
 
 // variable httpG is a "this" pointer to current httphandler object
@@ -144,9 +154,9 @@ void HTTPHandler::set_socket(curl_socket_t fd, ev::io* watcher, int what) {
 // socketp  will be a pointer to the socket watcher;
 //          This is the pointer stored with curl_multi_assign when first creating a socket
 int HTTPHandler::socket_callback(CURL *easy, curl_socket_t sockfd, int what, void *clientp, void *socketp) {
-  std::cout << "socket callback\n";
+
   HTTPHandler*  httpG = static_cast<HTTPHandler*>(clientp);
-  void* private_data{nullptr};
+  void* private_data {nullptr};
   curl_easy_getinfo(easy, CURLINFO_PRIVATE, &private_data);
   ev::io* socket_watcher = &(static_cast<HTTPRequest*>(private_data))->sock_wtchr;
 
@@ -161,12 +171,15 @@ int HTTPHandler::socket_callback(CURL *easy, curl_socket_t sockfd, int what, voi
 
   return 0;
   ;
+
 }
 
 // multi        is the pointer to the multi handle
 // timeout_ms   is the timeout to wait for
 // userp        in our context is a pointer to the HTTPHandler object.
 int HTTPHandler::timer_callback(CURLM *multi, long timeout_ms, void *userp) {
+
+  (void) multi;
   constexpr double ms_per_sec = 1000.0;
   HTTPHandler* httpG = static_cast<HTTPHandler*>( userp );
   ev::timer& timer =  httpG->curl_timer;
@@ -176,6 +189,7 @@ int HTTPHandler::timer_callback(CURLM *multi, long timeout_ms, void *userp) {
   timer.set(timeout);
   timer.start();
   return 0;
+
 }
 
 void HTTPHandler::start_backend() const {

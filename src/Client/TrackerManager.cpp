@@ -56,8 +56,8 @@ void TrackerManager::initiatlize_trackers(std::vector<std::string_view> trackers
     auto& current               = current_spot->second;
     if (fresh) { // initializer should have its own seperat function
       current.announce_urls.domain_name = key;
-      current.timers.maximum.set(event_loop);
-      current.timers.minimum.set(event_loop);
+      current.timers.maximum.set(event.loop);
+      current.timers.minimum.set(event.loop);
       current.timers.maximum.set<&TrackerManager::tracker_timeout_handler> ();
       current.timers.minimum.set<&TrackerManager::tracker_timeout_handler> ();
       current.timers.maximum.data = &current;
@@ -103,13 +103,13 @@ int TrackerManager::initialize_libev() {
 }
 
 void TrackerManager::initialize_state_system() {
-  event_signal.set(event_loop);
-  event_signal.set <TrackerManager, &TrackerManager::handle_event> (this);
-  event_signal.start();
+  event.signal.set(event.loop);
+  event.signal.set <TrackerManager, &TrackerManager::handle_event> (this);
+  event.signal.start();
 }
 
 TrackerManager::TrackerManager(TorrentFile& torrent_, int port)
-  : event_loop(initialize_libev()) ,protocol(event_loop), tracker_context() {
+  : event(initialize_libev()) ,protocol(event.loop), tracker_context() {
   initialize_info_hash_byte(torrent_);
   initialize_tracker_context(torrent_);
   initiatlize_trackers(torrent_.get_tracker_urls());
@@ -212,10 +212,6 @@ void TrackerManager::start_event() {
     assert(tracker.state == tracker_state_t::null);
 
     tracker.state = tracker_state_t::inactive;
-
-    while (tracker.current_proto != tracker_proto_t::http) // udp failsafe
-      tracker.seek_to_next_url();
-
     arm_timer(tracker.timers.maximum, 0.0);
 
   }
@@ -284,21 +280,21 @@ void TrackerManager::shutdown_event() {
 }
 
 inline void TrackerManager::wait_for_event() {
-  event_loop.run();
+  event.loop.run();
 }
 
 void TrackerManager::handle_event() {
 
-  std::uint8_t event = event_set.load(std::memory_order_acquire) ;
+  std::uint8_t event_ = event.set.load(std::memory_order_acquire) ;
   std::uint8_t handled = 0;
 
-  if ( event & start_mask && !tracker_context.active ) {
+  if ( event_ & start_mask && !tracker_context.active ) {
     start_event();
     tracker_context.active = true;
     handled |= start_mask;
   }
 
-  if ( event & shutdown_mask && tracker_context.active ) {
+  if ( event_ & shutdown_mask && tracker_context.active ) {
     shutdown_event();
     tracker_context.active = false;
     handled |= shutdown_mask | reannounce_mask | force_reannounce_mask;
@@ -306,25 +302,25 @@ void TrackerManager::handle_event() {
 
   if ( tracker_context.active ) {
 
-    if (event & force_reannounce_mask) {
+    if (event_ & force_reannounce_mask) {
       force_reannounce_event();
       handled |= force_reannounce_mask | reannounce_mask;
-      event &= ~reannounce_mask;
+      event_ &= ~reannounce_mask;
     }
 
-    if (event & reannounce_mask)  {
+    if (event_ & reannounce_mask)  {
       reannounce_event();
       handled |= reannounce_mask;
     }
 
   }
 
-  auto previous = event_set.fetch_and(~handled, std::memory_order_acq_rel);
+  auto previous = event.set.fetch_and(~handled, std::memory_order_acq_rel);
   // incase when processing this (possibly) coalesced invocation
   // a new event arrives and libev only schedules coalesced event before
   // callback invocation
   if ( previous & ~handled )
-    event_signal.feed_event(1);
+    event.signal.feed_event(1);
 
 }
 
@@ -338,29 +334,29 @@ void TrackerManager::start_tracker_manager() {
 
 void TrackerManager::start() {
 
-  event_set.fetch_or(start_mask, std::memory_order_acq_rel);
-  event_signal.send();
+  event.set.fetch_or(start_mask, std::memory_order_acq_rel);
+  event.signal.send();
 
 }
 
 void TrackerManager::reannounce() {
 
-  event_set.fetch_or(reannounce_mask, std::memory_order_acq_rel);
-  event_signal.send();
+  event.set.fetch_or(reannounce_mask, std::memory_order_acq_rel);
+  event.signal.send();
 
 }
 
 void TrackerManager::force_reannounce() {
 
-  event_set.fetch_or(force_reannounce_mask, std::memory_order_acq_rel);
-  event_signal.send();
+  event.set.fetch_or(force_reannounce_mask, std::memory_order_acq_rel);
+  event.signal.send();
 
 }
 
 void TrackerManager::shutdown() {
 
-  event_set.fetch_or(shutdown_mask, std::memory_order_acq_rel);
-  event_signal.send();
+  event.set.fetch_or(shutdown_mask, std::memory_order_acq_rel);
+  event.signal.send();
 
 }
 
