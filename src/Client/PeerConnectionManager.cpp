@@ -209,16 +209,21 @@ void inbound_scheduler_t::plus_mask_current(std::size_t spot) {
 void inbound_scheduler_t::round_robin_establisher_scheduler() {
   // This is a load balancer.
   for (; manager.statistics.get_inbound_inflight() < bprotocol::constants::max_inbound_inflight; ) {
+
      std::size_t spot = static_cast<std::size_t>(current);
+
     if (current == discovered)
       empties[spot] = !discovered_peer_scheduler();
     else if (current == disconnected)
       empties[spot] = !disconnected_peer_scheduler();
     else if (current == failed)
       empties[spot] = !failed_peer_scheduler();
+
+    plus_mask_current(spot);
+
     if (empties[0] && empties[1] && empties[2])
       break;
-    plus_mask_current(spot);
+
   }
 }
 
