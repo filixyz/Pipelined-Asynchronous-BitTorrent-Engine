@@ -49,13 +49,15 @@ CURL* HTTPHandler::new_easy(network_data& user_field) {
   return newE;
 }
 
-void HTTPHandler::add_request(HTTPRequest* request) const {
+void HTTPHandler::add_request(HTTPRequest* request) {
+
   request->sock_wtchr.set(event_loop);
   curl_easy_setopt(request->connection, CURLOPT_URL, request->user_space.url.data());
   curl_multi_add_handle(multi, request->connection);
+
 }
 
-void HTTPHandler::rmv_request(HTTPRequest* request) const {
+void HTTPHandler::rmv_request(HTTPRequest* request) {
   curl_multi_remove_handle(multi, request->connection);
 }
 
@@ -92,7 +94,7 @@ void HTTPHandler::drive_sockt(ev::io& socket, int revents) {
   HTTPHandler* http = static_cast<HTTPHandler*>(socket.data);
   CURLMcode cRes = curl_multi_socket_action(http->multi, socket.fd, actions, &http->actives);
   (void)cRes;// code to handle cRes Goes here
-  chk_finished(http->multi);
+  chk_finished(http->multi);;
 
 }
 
@@ -177,6 +179,7 @@ int HTTPHandler::socket_callback(CURL *easy, curl_socket_t sockfd, int what, voi
 // multi        is the pointer to the multi handle
 // timeout_ms   is the timeout to wait for
 // userp        in our context is a pointer to the HTTPHandler object.
+
 int HTTPHandler::timer_callback(CURLM *multi, long timeout_ms, void *userp) {
 
   (void) multi;
@@ -192,7 +195,7 @@ int HTTPHandler::timer_callback(CURLM *multi, long timeout_ms, void *userp) {
 
 }
 
-void HTTPHandler::start_backend() const {
-  if (curl_multi_socket_action(multi, CURL_SOCKET_TIMEOUT, 0, 0) == CURLM_OK)
+void HTTPHandler::start_backend() {
+  if (curl_multi_socket_action(multi, CURL_SOCKET_TIMEOUT, 0, &actives) == CURLM_OK)
     std::cout << "HTTP BACKEND ONLINE";
 }

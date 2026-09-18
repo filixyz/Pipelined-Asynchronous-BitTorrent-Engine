@@ -30,6 +30,7 @@ enum class timer_count: std::uint8_t {
 struct tracker_context_t {
   bool online {false};
   bool interruptible {false};
+  bool just_failed{false};
   bool has_http {false}; // udp failsafe
   std::size_t failures {0};
   std::size_t manager_space_idx{0};
@@ -39,6 +40,7 @@ struct tracker_context_t {
     interruptible = false;
     failures = 0;
     manager_space_idx = 0;
+    just_failed=false;
   };
 
 };
@@ -54,6 +56,8 @@ struct tracker_timers_t {
     minimum_duration = 0;
     maximum_duration = 0;
     type = timer_count::one;
+    minimum.stop();
+    maximum.stop();
   }
 
 };
@@ -121,10 +125,10 @@ class TrackerManager {
   class Tracker;
 
   struct protocol_handle_t {
-    const HTTPHandler http;
+    HTTPHandler http;
     UDPHandler udp;
     protocol_handle_t(ev::dynamic_loop&);
-    void add_request(Tracker*) const;
+    void add_request(Tracker*);
   };
 
   static constexpr std::chrono::seconds startup_window {30};
@@ -193,6 +197,7 @@ class TrackerManager::Tracker: public HTTPRequest {
 
   void do_on_success() override;
   void do_on_failure() override;
+
   void active_state_handler(ben::dic& parsed);
   void inactive_state_handler();
 
@@ -207,7 +212,8 @@ class TrackerManager::Tracker: public HTTPRequest {
     announce_urls.reset();
   }
 
-  void seek_to_next_url();
+  bool seek_to_next_url();
+
   friend TrackerManager;
 
 public:
@@ -219,6 +225,7 @@ public:
 
   Tracker (TrackerManager&);
   std::string get_url();
+
 };
 
 #endif

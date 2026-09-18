@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstdlib>
 #include <ctime>
 #include <curl/curl.h>
@@ -22,7 +23,7 @@
 TrackerManager::protocol_handle_t::protocol_handle_t(ev::dynamic_loop& ev_loop) : http(ev_loop)
 {}
 
-void TrackerManager::protocol_handle_t::add_request(Tracker* trkr) const {
+void TrackerManager::protocol_handle_t::add_request(Tracker* trkr) {
 
   switch (trkr->current_proto) {
 
@@ -64,7 +65,10 @@ void TrackerManager::initiatlize_trackers(std::vector<std::string_view> trackers
       current.timers.minimum.data = &current;
     }
     tag_http_presence(url, current);
-    current.announce_urls.list.push_back(std::string(url));
+    auto& list = current.announce_urls.list;
+    if (std::find(list.begin(), list.end(), url) == list.end()) {
+      list.push_back(std::string(url));
+    }
   }
 
 }
@@ -159,7 +163,6 @@ void TrackerManager::set_announce_url_for_tracker(Tracker& trkr, tracker_event e
     event_strings[static_cast<size_t>(event)];
 
   trkr.user_space.url = std::move(request_url);
-
 }
 
 int TrackerManager::get_retry_seconds(const Tracker* trkr) {
@@ -176,6 +179,7 @@ int TrackerManager::get_retry_seconds(const Tracker* trkr) {
 void TrackerManager::arm_timer(ev::timer& timer, double duration) {
   timer.set(duration);
   timer.start();
+  std::cout << " :duration set "  << duration << '\n';
 }
 
 void TrackerManager::disarm_timer(ev::timer& timer) {
@@ -199,7 +203,6 @@ void TrackerManager::tracker_timeout_handler(ev::timer& timer, int revents) {
   tracker.manager.set_announce_url_for_tracker(tracker, event);
   tracker.send_to_protocol_space();
   tracker.manager.protocol.add_request(&tracker);
-
 }
 
 void TrackerManager::start_event() {
@@ -209,10 +212,12 @@ void TrackerManager::start_event() {
   for(auto __tracker : manager_space) {
 
     auto& tracker = * __tracker;
+
     assert(tracker.state == tracker_state_t::null);
+    assert(tracker.timers.type == timer_count::one);
 
     tracker.state = tracker_state_t::inactive;
-    arm_timer(tracker.timers.maximum, 0.0);
+    arm_timer(tracker.timers.maximum, 0.1);
 
   }
 
@@ -234,7 +239,7 @@ void TrackerManager::reannounce_event() {
       // since we are doing what the normal interval would had done we should disarm the main
       // interval timer. so epoll doesnt wake on it
       disarm_timer(tracker.timers.maximum);
-      set_announce_url_for_tracker(tracker, tracker_event::update);
+      set_announce_url_for_tracker(tracker, tracker_context.event);
       tracker.send_to_protocol_space();
       protocol.add_request(trkr);
     }
@@ -250,7 +255,7 @@ void TrackerManager::force_reannounce_event() {
     if(tracker.state == tracker_state_t::active) {
       disarm_timer(tracker.timers.minimum);
       disarm_timer(tracker.timers.maximum);
-      set_announce_url_for_tracker(tracker, tracker_event::update);
+      set_announce_url_for_tracker(tracker, tracker_context.event);
       tracker.send_to_protocol_space();
       protocol.add_request(trkr);
     }
@@ -272,8 +277,7 @@ void TrackerManager::shutdown_event() {
     if(tracker.timers.type == timer_count::two)
       disarm_timer(tracker.timers.minimum);
 
-    tracker_event current_ev = tracker_context.left==0 ? tracker_event::completed : tracker_event::stopped;
-    set_announce_url_for_tracker(tracker, current_ev);
+    set_announce_url_for_tracker(tracker, tracker_context.event);
     protocol.add_request(trkr);
   }
 

@@ -1,6 +1,7 @@
 #include "TrackerManager.hpp"
 #include "../Bencoder/Bencode.hpp"
 #include <exception>
+#include <memory>
 #include <sstream>
 #include <string>
 
@@ -9,8 +10,12 @@ TrackerManager::Tracker::Tracker (TrackerManager& __manager) : HTTPRequest(), ma
 void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
 
   state = tracker_state_t::active;
-  context.failures = 0;
-  announce_urls.failed_idx = -1;
+
+  { // reset failure stats
+    context.failures = 0;
+    announce_urls.failed_idx = -1;
+    context.just_failed = false;
+  }
 
   if (parse.contains("warning message"))
     std::cout << parse["warning message"];
@@ -38,14 +43,14 @@ void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
     context.interruptible=false;
   }
 
-  if (manager.tracker_context.active)
+  if (manager.tracker_context.active) {
     return_to_manager_space();
-  else
+  } else
     shutdown_reset();
 
 }
 
-static constexpr int retry_for_new_url = 5;
+static constexpr double retry_for_new_url = 5.0;
 
 void TrackerManager::Tracker::inactive_state_handler() {
 
@@ -53,25 +58,33 @@ void TrackerManager::Tracker::inactive_state_handler() {
   timers.type = timer_count::one;
 
   // cache failed idx for wraparound check
-  if (context.failures == 0) {
+  if (!context.just_failed) {
     announce_urls.failed_idx = announce_urls.current_idx;
+    context.just_failed = true;
   }
-  // move to next http url
-  while ( current_proto == tracker_proto_t::http ) seek_to_next_url();
 
-  if ( announce_urls.current_idx == announce_urls.failed_idx ) {
+  // cycle to next http url
+  bool url_cycle_exhausted;
+  do
+    url_cycle_exhausted = seek_to_next_url();
+  while ( current_proto != tracker_proto_t::http ); // udp failsafe
+
+  if ( url_cycle_exhausted ) {
     context.failures++;
     timers.maximum_duration = get_retry_seconds(this);
   } else {
     timers.maximum_duration = retry_for_new_url;
   }
 
+  //std::cout << get_url() << " failed tracker -> " << " online: "<< context.online << " -> "
+  //  << "failed idx: " << announce_urls.failed_idx << " current idx: " << announce_urls.current_idx << " urls: " << announce_urls.list.size();
   arm_timer(timers.maximum, timers.maximum_duration);
 
-  if (manager.tracker_context.active)
+  if (manager.tracker_context.active) {
     return_to_manager_space();
-  else
+  } else {
     shutdown_reset();
+  }
 
 }
 
@@ -83,25 +96,25 @@ void TrackerManager::Tracker::do_on_success() {
     return;
   }
 
-  ben::dic* parsed_dict_ptr;
+  std::unique_ptr<Bendata> parse;
+
   try  {
 
     std::istringstream bencode(user_space.data);
-    Bendata parse = bendecode_from_file(bencode);
-    parsed_dict_ptr = &parse.get_data<ben::dic>();
+    parse = std::make_unique<Bendata>(bendecode_from_file(bencode));
+    parse->get_data<ben::dic>(); // validation check.
 
   } catch (std::exception& e) {
 
     // tracker responded with rubbish bencode
     std::string domain_name = announce_urls.domain_name;
     manager.tracker_connections.erase(domain_name);
-    std::cout << "deleted tracker -> " << domain_name << '\n';
     std::cout << "bencoded exception: " << e.what() << '\n';
-
     return;
+
   }
 
-  ben::dic& parsed_dict = * parsed_dict_ptr;
+  ben::dic& parsed_dict = parse->get_data<ben::dic>();
 
   if (parsed_dict.contains("failure reason"))  {
     std::cout << parsed_dict["failure reason"];
@@ -113,12 +126,9 @@ void TrackerManager::Tracker::do_on_success() {
 
 }
 
-
 void TrackerManager::Tracker::do_on_failure() {
-
   context.online = false;
   inactive_state_handler();
-
 }
 
 void TrackerManager::Tracker::return_to_manager_space() {
@@ -137,9 +147,20 @@ std::string TrackerManager::Tracker::get_url() {
   return announce_urls.list[announce_urls.current_idx];
 }
 
-void TrackerManager::Tracker::seek_to_next_url() {
-  auto& index = ++announce_urls.current_idx;
+bool TrackerManager::Tracker::seek_to_next_url() {
+
+  announce_urls.current_idx = announce_urls.current_idx + 1;
   auto& urls  = announce_urls.list;
-  if ( index >= urls.size() ) index=0;
-  current_proto = urls[index].starts_with("http") ? tracker_proto_t::http : tracker_proto_t::udp;
+
+  if ( announce_urls.current_idx >= urls.size() )
+    announce_urls.current_idx=0;
+
+  current_proto = urls[announce_urls.current_idx].starts_with("http") ?
+    tracker_proto_t::http :
+    tracker_proto_t::udp;
+
+  if (announce_urls.failed_idx == announce_urls.current_idx)
+    return true;
+  return false;
+
 }
