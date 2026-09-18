@@ -1,119 +1,166 @@
 #include "TrackerManager.hpp"
 #include "../Bencoder/Bencode.hpp"
+#include <exception>
+#include <memory>
 #include <sstream>
 #include <string>
 
-/**
- * A Tracker cannot be default initialized nor moved
- * It can be initialized with a url though and it can also be
- * copy constructed, when copy constructed all data members will
- * be identical (in value) with the Tracker object copied from
- * but the ev::timer members are not copied. These limitiations
- * are due to ev::timer having no public copy/move constructors set. It also makes
- * sense logically if you think about it, so it's more of a logical limitation
- * than a design one.
- */
+TrackerManager::Tracker::Tracker (TrackerManager& __manager) : HTTPRequest(), manager(__manager) {};
 
-TrackerManager::Tracker::Tracker(std::string url) : HTTPRequest(), nest{} {
-  nest.announce_urls.push_back(std::move(url));
-  nest.current_announce_url_index=0;
-};
+void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
 
-TrackerManager::Tracker::Tracker(const Tracker& other) {
-  // A copied Traker is assumed to be used in another tracker manager
-  // So copying the time watchers, failure count and queue_index members
-  // is illogical.
-  nest.bool_set = other.nest.bool_set;
-  nest.time_set.min_interval = other.nest.time_set.min_interval;
-  nest.time_set.interval = other.nest.time_set.interval;
-  nest.tracker_id = other.nest.tracker_id;
+  state = tracker_state_t::active;
+
+  { // reset failure stats
+    context.failures = 0;
+    announce_urls.failed_idx = -1;
+    context.just_failed = false;
+  }
+
+  if (parse.contains("warning message"))
+    std::cout << parse["warning message"];
+
+  if (parse.contains("interval")) {
+    timers.maximum_duration = parse["interval"].get_data<ben::num>();
+    timers.type = timer_count::one;
+  }
+
+  if (parse.contains("min interval")) {
+    timers.minimum_duration = parse["min interval"].get_data<ben::num>();
+    timers.type = timer_count::two;
+  }
+
+  if (parse.contains("tracker id"))
+    tracker_id = parse["tracker id"].get_data<ben::str>();
+
+  if (parse.contains("peers"))
+    std::cout << parse["peers"];
+
+  arm_timer(timers.maximum, timers.maximum_duration);
+
+  if (timers.type == timer_count::two) {
+    arm_timer(timers.minimum, timers.minimum_duration);
+    context.interruptible=false;
+  }
+
+  if (manager.tracker_context.active) {
+    return_to_manager_space();
+  } else
+    shutdown_reset();
+
+}
+
+static constexpr double retry_for_new_url = 5.0;
+
+void TrackerManager::Tracker::inactive_state_handler() {
+
+  state = tracker_state_t::inactive;
+  timers.type = timer_count::one;
+
+  // cache failed idx for wraparound check
+  if (!context.just_failed) {
+    announce_urls.failed_idx = announce_urls.current_idx;
+    context.just_failed = true;
+  }
+
+  // cycle to next http url
+  bool url_cycle_exhausted;
+  do
+    url_cycle_exhausted = seek_to_next_url();
+  while ( current_proto != tracker_proto_t::http ); // udp failsafe
+
+  if ( url_cycle_exhausted ) {
+    context.failures++;
+    timers.maximum_duration = get_retry_seconds(this);
+  } else {
+    timers.maximum_duration = retry_for_new_url;
+  }
+
+  //std::cout << get_url() << " failed tracker -> " << " online: "<< context.online << " -> "
+  //  << "failed idx: " << announce_urls.failed_idx << " current idx: " << announce_urls.current_idx << " urls: " << announce_urls.list.size();
+  arm_timer(timers.maximum, timers.maximum_duration);
+
+  if (manager.tracker_context.active) {
+    return_to_manager_space();
+  } else {
+    shutdown_reset();
+  }
+
 }
 
 void TrackerManager::Tracker::do_on_success() {
-  std::cout << "tracker succeeded\n";
-  nest.failure_count=0;
-  nest.failed_url_index=-1;
-  nest.bool_set.active_flag=true;
-  // nest.bool_set.update_state=true;  // !!!bug!!! what if successful at backend level (http-200ok/udp-whatevs) but contains "failure reason" key?
+  context.online = true;
 
-  // place bendecode parse and tracker timer updates here
-  // send peers to peermanager here
+  if (user_space.data.empty()) {
+    inactive_state_handler();
+    return;
+  }
 
-  std::cout << user_space.data << '\n';
-  if (!user_space.data.empty()) {
+  std::unique_ptr<Bendata> parse;
+
+  try  {
+
     std::istringstream bencode(user_space.data);
-    Bendata parse = bendecode_from_file(bencode); // TEST
-    ben::dic& parsed_dict = parse.get_data<ben::dic>();
-    // ----------> EXCEPTION MAY HAPPEN HERE IF BENCODE IS ERRORNEOUS.
-    if (parsed_dict.contains("failure reason"))
-      std::cout << parsed_dict["failure reason"];
-    else
-      nest.bool_set.update_state=true;
-    if (parsed_dict.contains("warning message"))
-      std::cout << parsed_dict["warning message"];
-    if (parsed_dict.contains("interval"))
-      nest.time_set.interval = parsed_dict["interval"].get_data<ben::num>();
-    if (parsed_dict.contains("min interval"))
-      nest.time_set.min_interval = parsed_dict["min interval"].get_data<ben::num>();
-    else
-      nest.time_set.min_interval = 0;
-    if (parsed_dict.contains("tracker id"))
-      nest.tracker_id = parsed_dict["tracker id"].get_data<ben::str>();
-    if (parsed_dict.contains("peers"))
-      std::cout << parsed_dict["peers"];
+    parse = std::make_unique<Bendata>(bendecode_from_file(bencode));
+    parse->get_data<ben::dic>(); // validation check.
+
+  } catch (std::exception& e) {
+
+    // tracker responded with rubbish bencode
+    std::string domain_name = announce_urls.domain_name;
+    manager.tracker_connections.erase(domain_name);
+    std::cout << "bencoded exception: " << e.what() << '\n';
+    return;
+
   }
 
-  if(nest.time_set.min_interval==0 || nest.time_set.min_interval==-1)
-    nest.bool_set.only_one_timer=true;
+  ben::dic& parsed_dict = parse->get_data<ben::dic>();
 
-  if(!nest.bool_set.only_one_timer) {
-    arm_timer(nest.time_set.min_timer_w, nest.time_set.min_interval);
-    nest.bool_set.interruptible=false;
+  if (parsed_dict.contains("failure reason"))  {
+    std::cout << parsed_dict["failure reason"];
+    inactive_state_handler();
+    return;
   }
-  arm_timer(nest.time_set.timer_w, nest.time_set.interval);
 
-  if (nest.bool_set.requeueable)
-    return_to_manager_space();
+  active_state_handler(parsed_dict);
+
 }
 
 void TrackerManager::Tracker::do_on_failure() {
-  std::cout << "tracker failed\n";
-  nest.bool_set.only_one_timer=true;
-  int retry_for_new_url = 5;//seconds
-  if (nest.failed_url_index==-1)
-    nest.failed_url_index=nest.current_announce_url_index;
-  // failsafe for unimplemeneted udp protocol mechanism
-  // once implemented remove `seek_to_next_url()` from
-  // while loop; it should run only once.
-  while (http_mode==false) seek_to_next_url();                    // UDP FAILSAFE: will forever if tracker has no http url
-  if (nest.current_announce_url_index==static_cast<std::size_t>(nest.failed_url_index)) {
-    nest.failure_count++;
-    nest.bool_set.active_flag=false;
-    nest.time_set.interval = get_retry_seconds(this);
-  }
-  nest.time_set.interval = retry_for_new_url;
-  arm_timer(nest.time_set.timer_w, nest.time_set.interval);
-  if (nest.bool_set.requeueable)
-    return_to_manager_space();
+  context.online = false;
+  inactive_state_handler();
 }
 
 void TrackerManager::Tracker::return_to_manager_space() {
-  *nest.queue_ptr = this;
-  ++(*nest.trkrs_in_trkrspace_ref);
+  context.manager_space_idx = manager.manager_space.size();
+  manager.manager_space.push_back(this);
 }
 
 void TrackerManager::Tracker::send_to_protocol_space() {
-  *nest.queue_ptr = nullptr;
-  --(*nest.trkrs_in_trkrspace_ref);
+  Tracker* last = manager.manager_space.back();
+  last->context.manager_space_idx = context.manager_space_idx;
+  manager.manager_space[context.manager_space_idx] = last;
+  manager.manager_space.pop_back();
 }
 
 std::string TrackerManager::Tracker::get_url() {
-  return nest.announce_urls[nest.current_announce_url_index];
+  return announce_urls.list[announce_urls.current_idx];
 }
 
-void TrackerManager::Tracker::seek_to_next_url() {
-  auto& index = ++nest.current_announce_url_index;
-  auto& urls  = nest.announce_urls;
-  if ( index >= urls.size() ) index=0;  // possible bug: int and size_t byte count mismatch :: FIXED
-  http_mode = urls[index].starts_with("http") ? true : false;
+bool TrackerManager::Tracker::seek_to_next_url() {
+
+  announce_urls.current_idx = announce_urls.current_idx + 1;
+  auto& urls  = announce_urls.list;
+
+  if ( announce_urls.current_idx >= urls.size() )
+    announce_urls.current_idx=0;
+
+  current_proto = urls[announce_urls.current_idx].starts_with("http") ?
+    tracker_proto_t::http :
+    tracker_proto_t::udp;
+
+  if (announce_urls.failed_idx == announce_urls.current_idx)
+    return true;
+  return false;
+
 }

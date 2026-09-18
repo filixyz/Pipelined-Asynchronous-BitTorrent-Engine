@@ -32,9 +32,9 @@ public:
   HTTPHandler(ev::dynamic_loop&);
   ~HTTPHandler();
   static void escape_byte_string(std::string&);
-  void add_request(HTTPRequest*) const;
-  void rmv_request(HTTPRequest*) const;
-  void start_backend() const;
+  void add_request(HTTPRequest*);
+  void rmv_request(HTTPRequest*);
+  void start_backend();
   void reset();
 };
 
