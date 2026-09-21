@@ -13,8 +13,8 @@ void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
 
   { // reset failure stats
     context.failures = 0;
-    announce_urls.failed_idx = -1;
-    context.just_failed = false;
+    announce_url.failed_idx = -1;
+    announce_url.just_failed = false;
   }
 
   if (parse.contains("warning message"))
@@ -58,9 +58,9 @@ void TrackerManager::Tracker::inactive_state_handler() {
   timers.type = timer_count::one;
 
   // cache failed idx for wraparound check
-  if (!context.just_failed) {
-    announce_urls.failed_idx = announce_urls.current_idx;
-    context.just_failed = true;
+  if (!announce_url.just_failed) {
+    announce_url.failed_idx = announce_url.current_idx;
+    announce_url.just_failed = true;
   }
 
   // cycle to next http url
@@ -107,8 +107,7 @@ void TrackerManager::Tracker::do_on_success() {
   } catch (std::exception& e) {
 
     // tracker responded with rubbish bencode
-    std::string domain_name = announce_urls.domain_name;
-    manager.tracker_connections.erase(domain_name);
+    manager.tracker_connections.erase(announce_url.domain_name);
     std::cout << "bencoded exception: " << e.what() << '\n';
     return;
 
@@ -144,22 +143,22 @@ void TrackerManager::Tracker::send_to_protocol_space() {
 }
 
 std::string TrackerManager::Tracker::get_url() {
-  return announce_urls.list[announce_urls.current_idx];
+  return announce_url.list[announce_url.current_idx];
 }
 
 bool TrackerManager::Tracker::seek_to_next_url() {
 
-  announce_urls.current_idx = announce_urls.current_idx + 1;
-  auto& urls  = announce_urls.list;
+  announce_url.current_idx = announce_url.current_idx + 1;
+  auto& urls  = announce_url.list;
 
-  if ( announce_urls.current_idx >= urls.size() )
-    announce_urls.current_idx=0;
+  if ( announce_url.current_idx >= urls.size() )
+    announce_url.current_idx=0;
 
-  current_proto = urls[announce_urls.current_idx].starts_with("http") ?
+  current_proto = urls[announce_url.current_idx].starts_with("http") ?
     tracker_proto_t::http :
     tracker_proto_t::udp;
 
-  if (announce_urls.failed_idx == announce_urls.current_idx)
+  if (announce_url.failed_idx == announce_url.current_idx)
     return true;
   return false;
 

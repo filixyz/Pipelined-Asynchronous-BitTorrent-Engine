@@ -30,7 +30,6 @@ enum class timer_count: std::uint8_t {
 struct tracker_context_t {
   bool online {false};
   bool interruptible {false};
-  bool just_failed{false};
   bool has_http {false}; // udp failsafe
   std::size_t failures {0};
   std::size_t manager_space_idx{0};
@@ -40,7 +39,6 @@ struct tracker_context_t {
     interruptible = false;
     failures = 0;
     manager_space_idx = 0;
-    just_failed=false;
   };
 
 };
@@ -67,11 +65,13 @@ struct announce_list_t {
   std::string domain_name;
   std::size_t current_idx {0};
   std::size_t failed_idx {0};
+  bool just_failed{false};
 
   inline void reset() {
     failed_idx = 0;
     current_idx = 0;
     failed_idx = 0;
+    just_failed=false;
   }
 };
 
@@ -193,7 +193,7 @@ class TrackerManager::Tracker: public HTTPRequest {
   tracker_proto_t current_proto = tracker_proto_t::null;
   tracker_context_t context;
   tracker_timers_t timers;
-  announce_list_t announce_urls;
+  announce_list_t announce_url;
 
   void do_on_success() override;
   void do_on_failure() override;
@@ -209,7 +209,7 @@ class TrackerManager::Tracker: public HTTPRequest {
     current_proto = tracker_proto_t::null;
     context.reset();
     timers.reset();
-    announce_urls.reset();
+    announce_url.reset();
   }
 
   bool seek_to_next_url();
