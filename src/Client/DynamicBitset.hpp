@@ -7,23 +7,44 @@
 
 class DynamicBitset {
 
+  std::vector<std::uint64_t> bitfield;
+  std::size_t length{};
+
   struct bitfield_index {
-    std::size_t field_index;
+    std::size_t word_index;
     std::size_t index;
   };
 
-  std::vector<std::uint64_t> bitfield;
-  const std::size_t length{};
-
-  constexpr std::size_t words_length(std::size_t) const;
-  constexpr std::size_t bytes_length(std::size_t) const;
   constexpr bitfield_index get_index(std::size_t) const;
 
-  public:
+private:
+
+  struct set_range_t
+  {
+    const DynamicBitset& set;
+
+    struct iterator {
+      const DynamicBitset& set;
+      bitfield_index bit {0, 0};
+      std::size_t operator*() const;
+      iterator& operator++();
+      bool operator==(iterator const&) const;
+      iterator (const DynamicBitset& set_) : set(set_) {};
+    };
+
+    set_range_t(const DynamicBitset& set_): set(set_) {};
+
+    iterator end() const;
+    iterator begin() const;
+  };
+
+public:
+
+  // stole this npos idea from boosts implementation.
+  inline constexpr static std::size_t npos = static_cast<size_t>(-1);
 
   DynamicBitset()=default;
   DynamicBitset(std::size_t count);
-  DynamicBitset(std::span<const std::uint8_t> bitview, std::size_t count);
 
   DynamicBitset operator&(const DynamicBitset&);
   void operator&=(const DynamicBitset&);
@@ -32,15 +53,36 @@ class DynamicBitset {
 
   void set(std::size_t);
   void reset(std::size_t);
-  void reset();
+  void clear();
+
   bool test(std::size_t) const;
   std::size_t count() const;
   bool any() const;
   bool all() const;
   bool none() const;
-  std::size_t encode_wire_bytes(std::span<std::byte>, std::size_t) const;
-  std::size_t size() const;
 
-  void print();
+  std::size_t find_first() const ;
+  std::size_t find_next(std::size_t from) const;
+  set_range_t set_bits() const;
+
+  bool        decode_wire_bytes (std::span<const std::uint8_t> bitview);
+  std::size_t encode_wire_bytes (std::span<std::byte>, std::size_t encoded) const;
+
+  std::size_t size() const;
+  void print() const;
+
+};
+
+inline static constexpr std::size_t words_length(std::size_t bit_length) {
+
+  std::size_t extra = bit_length & (63) ? 1 : 0;
+  std::size_t nextr = bit_length/64;
+  return nextr + extra;
+
+};
+
+inline static constexpr std::size_t bytes_length(std::size_t bit_length) {
+
+  return bit_length / 8 + ( (bit_length & 7)!=0  );
 
 };
