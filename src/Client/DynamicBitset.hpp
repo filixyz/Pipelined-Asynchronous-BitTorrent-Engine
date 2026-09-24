@@ -24,12 +24,15 @@ private:
     const DynamicBitset& set;
 
     struct iterator {
-      const DynamicBitset& set;
-      bitfield_index bit {0, 0};
       std::size_t operator*() const;
       iterator& operator++();
       bool operator==(iterator const&) const;
       iterator (const DynamicBitset& set_) : set(set_) {};
+    public:
+      const DynamicBitset& set;
+      std::size_t word_index;
+      mutable std::uint64_t cached_reads;
+      bitfield_index bit {0, 0};
     };
 
     set_range_t(const DynamicBitset& set_): set(set_) {};

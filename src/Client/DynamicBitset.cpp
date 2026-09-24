@@ -239,11 +239,6 @@ std::size_t DynamicBitset::find_next(std::size_t from) const {
 
 // ------------------------ SET RANGE IMPLEMENTATION----------------- //
 
-std::size_t DynamicBitset::set_range_t::iterator::operator* () const {
-
-  return (64 * bit.word_index) + bit.index;
-
-}
 
 DynamicBitset::set_range_t::iterator&  DynamicBitset::set_range_t::iterator::operator++() {
 
@@ -276,6 +271,41 @@ DynamicBitset::set_range_t::iterator&  DynamicBitset::set_range_t::iterator::ope
 
   bit.index = 0;
   return *this;
+
+  //----------another implementation-----------
+  std::size_t next = word_index + 1;
+  for (; next < set.bitfield.size(); ++next) {
+
+    if (cached_reads != 0) return *this;
+
+    cached_reads = set.bitfield[next];
+    word_index = next;
+
+  }
+
+  return *this;
+}
+
+std::size_t DynamicBitset::set_range_t::iterator::operator* () const {
+
+  return (64 * bit.word_index) + bit.index;
+
+  // -------------another implementation-----------
+  std::size_t set_bit_index = std::countl_zero(cached_reads);
+
+  if (set_bit_index < 64)
+    cached_reads &= ~( std::uint64_t{1}<<( 63 - set_bit_index ) );
+
+  return (64 * bit.word_index) + set_bit_index;
+
+  // meaning end sentinel wil be set.bitfield.size()*64 since
+  // in operator++ caching stops when word_index is 1 unit smaller than
+  // set.bitfield size and returns the iterator, not the *operator
+  // if there no bits left will count the number of consective zeros to
+  // be 64 bits, cached_reads is definitely zero so the read index
+  // clearing conditonal block is not invoked and return evaluates to
+  // 64 * (word_index 1 unit smaller than set.bitfield.size()) + 64
+  // which should == set.bitfield.size() * 64
 
 }
 
