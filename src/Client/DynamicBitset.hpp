@@ -28,11 +28,11 @@ private:
       iterator& operator++();
       bool operator==(iterator const&) const;
       iterator (const DynamicBitset& set_) : set(set_) {};
-    public:
+    private:
       const DynamicBitset& set;
-      std::size_t word_index;
-      mutable std::uint64_t cached_reads;
-      bitfield_index bit {0, 0};
+      std::size_t word_index{0};
+      mutable std::uint64_t cached_reads{0};
+      friend DynamicBitset;
     };
 
     set_range_t(const DynamicBitset& set_): set(set_) {};
@@ -68,8 +68,8 @@ public:
   std::size_t find_next(std::size_t from) const;
   set_range_t set_bits() const;
 
-  bool        decode_wire_bytes (std::span<const std::uint8_t> bitview);
-  std::size_t encode_wire_bytes (std::span<std::byte>, std::size_t encoded) const;
+  bool        decode_as_payload (std::span<const std::uint8_t> bitview);
+  std::size_t encode_as_payload (std::span<std::byte>, std::size_t encoded) const;
 
   std::size_t size() const;
   void print() const;

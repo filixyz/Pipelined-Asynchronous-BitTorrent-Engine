@@ -17,7 +17,7 @@ constexpr DynamicBitset::bitfield_index DynamicBitset::get_index(std::size_t ind
 
 DynamicBitset::DynamicBitset(std::size_t count) : bitfield(words_length(count)), length(count) {};
 
-bool DynamicBitset::decode_wire_bytes (std::span<const std::uint8_t> bytes_view) {
+bool DynamicBitset::decode_as_payload (std::span<const std::uint8_t> bytes_view) {
 
   // This decoder assumes that caller has already cleared the
   // bitset if not clear whatever bits set remains since this
@@ -133,7 +133,7 @@ constexpr std::uint64_t h_word_to_n_word(std::uint64_t word) {
 
 }
 
-std::size_t DynamicBitset::encode_wire_bytes(std::span<std::byte> target, std::size_t encoded_bytes) const {
+std::size_t DynamicBitset::encode_as_payload(std::span<std::byte> target, std::size_t encoded_bytes) const {
 
   std::size_t total = bytes_length(length);
   std::size_t start_word = encoded_bytes / 8;
@@ -229,8 +229,13 @@ std::size_t DynamicBitset::find_next(std::size_t from) const {
 
   if (from >= length)  return npos;
 
+  std::size_t current_bit_index = from & 63;
+
   set_range_t::iterator next {*this};
-  next.bit = { from / 64 , from & 63 };
+  next.word_index = from/64;
+  next.cached_reads = current_bit_index == 63
+    ? 0
+    : bitfield[next.word_index] & UINT64_MAX>>( current_bit_index + 1 );
   ++next;
 
   return next == set_bits().end() ? npos : *next;
@@ -249,30 +254,11 @@ DynamicBitset::set_range_t::iterator&  DynamicBitset::set_range_t::iterator::ope
   // so if left unchecked it will gladly pass the number of logical bits your set
   // should be representing if there are padded ending bits which, god forbid,
   // due to bad implementation, somehow is set, or true or flagged.
+  //
+  // It logic depends on the iterator to be operator * dereferenced both work in tandem
+  // operator++ main job is for caching new words when the current word bit reads have
+  // been exhausted.
 
-  std::size_t current = bit.index + 1;
-
-  for (; bit.word_index < set.bitfield.size(); ++ bit.word_index, current=0 ) {
-
-    if ( current == 64 ) continue;
-
-    std::uint64_t unread_mask = UINT64_MAX >> current;
-    std::uint64_t unread = set.bitfield[bit.word_index] & unread_mask;
-
-    if (unread == 0) continue;
-
-    std::size_t set_bit_index = static_cast<std::size_t> ( std::countl_zero(unread) );
-
-    bit.index = set_bit_index;
-
-    return * this;
-
-  }
-
-  bit.index = 0;
-  return *this;
-
-  //----------another implementation-----------
   std::size_t next = word_index + 1;
   for (; next < set.bitfield.size(); ++next) {
 
@@ -288,17 +274,14 @@ DynamicBitset::set_range_t::iterator&  DynamicBitset::set_range_t::iterator::ope
 
 std::size_t DynamicBitset::set_range_t::iterator::operator* () const {
 
-  return (64 * bit.word_index) + bit.index;
-
-  // -------------another implementation-----------
   std::size_t set_bit_index = std::countl_zero(cached_reads);
 
   if (set_bit_index < 64)
     cached_reads &= ~( std::uint64_t{1}<<( 63 - set_bit_index ) );
 
-  return (64 * bit.word_index) + set_bit_index;
+  return (64 * word_index) + set_bit_index;
 
-  // meaning end sentinel wil be set.bitfield.size()*64 since
+  // meaning end sentinel will be set.bitfield.size()*64 since
   // in operator++ caching stops when word_index is 1 unit smaller than
   // set.bitfield size and returns the iterator, not the *operator
   // if there no bits left will count the number of consective zeros to
@@ -311,17 +294,17 @@ std::size_t DynamicBitset::set_range_t::iterator::operator* () const {
 
 bool DynamicBitset::set_range_t::iterator::operator==(const iterator& other) const {
   return (
-    &set            ==  &other.set            &&
-    bit.word_index  ==  other.bit.word_index  &&
-    bit.index       ==  other.bit.index
+    &set          ==  &other.set          &&
+    word_index    ==  other.word_index    &&
+    cached_reads  ==  other.cached_reads
   );
 }
 
 DynamicBitset::set_range_t::iterator DynamicBitset::set_range_t::end() const {
 
-  bitfield_index end_bit = {set.bitfield.size(), 0};
   iterator end_iterator {set};
-  end_iterator.bit = end_bit;
+  end_iterator.word_index = set.bitfield.size()-1; // wraps to UINT_MAX when size is 0 (harmless since others only depend on it to respect it)
+  end_iterator.cached_reads = 0;
   return end_iterator;
 
 }
@@ -330,9 +313,9 @@ DynamicBitset::set_range_t::iterator DynamicBitset::set_range_t::begin() const {
 
   if (set.length == 0)  return end();
 
-  bitfield_index start_bit {0, 0};
   iterator start_iterator {set};
-  start_iterator.bit = start_bit;
+  start_iterator.word_index = 0;
+  start_iterator.cached_reads = set.bitfield[0];
   return set.test(0) ? start_iterator : ++start_iterator;
 
 }
