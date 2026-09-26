@@ -56,6 +56,7 @@ void PeerConnectionManager::drain_discovered() {
   ipv4_peer_address addr;
   while (discoveries.beamable_spsc.queue.pop(addr)) {
     discoveries.cache.push(std::move(addr));
+    statistics.increment_ipv4_addr_in_cache();
   }
   if (statistics.has_met_connection_quota() or !connection_pool.available())
     return;
@@ -136,6 +137,7 @@ bool inbound_scheduler_t::discovered_peer_scheduler() {
 
   ipv4_peer_address addr;
   while ( manager.discoveries.cache.fresh_pop(addr)==true ) {
+    manager.statistics.decrement_ipv4_addr_in_cache();
     auto [acquisition_successful,  acquired_slot] = manager.connection_pool.acquire();
     assert(acquisition_successful);
     auto [it, inserted] = manager.ipv4_peers.try_emplace(addr, acquired_slot);
@@ -189,6 +191,7 @@ bool inbound_scheduler_t::failed_peer_scheduler() {
   while ( manager.retry_queue.empty() == false ) {
     peer_failure_update failed_peer = manager.retry_queue.front();
     manager.retry_queue.pop();
+    manager.statistics.decrement_peers_in_retry();
     if (failed_peer.connection->generation() != failed_peer.cached_generation)
       continue;
     PeerConnection& peer = failed_peer.connection->object;
@@ -210,7 +213,7 @@ void inbound_scheduler_t::round_robin_establisher_scheduler() {
   // This is a load balancer.
   for (; manager.statistics.get_inbound_inflight() < bprotocol::constants::max_inbound_inflight; ) {
 
-     std::size_t spot = static_cast<std::size_t>(current);
+    std::size_t spot = static_cast<std::size_t>(current);
 
     if (current == discovered)
       empties[spot] = !discovered_peer_scheduler();
@@ -219,10 +222,10 @@ void inbound_scheduler_t::round_robin_establisher_scheduler() {
     else if (current == failed)
       empties[spot] = !failed_peer_scheduler();
 
-    plus_mask_current(spot);
-
     if (empties[0] && empties[1] && empties[2])
       break;
+
+    plus_mask_current(spot);
 
   }
 }
@@ -230,51 +233,6 @@ void inbound_scheduler_t::round_robin_establisher_scheduler() {
 inbound_scheduler_t::inbound_scheduler_t(PeerConnectionManager& __manager): manager(__manager) {
   daemon.set<inbound_scheduler_t, &inbound_scheduler_t::round_robin_establisher_scheduler>(this);
   daemon.set(manager.event_loop);
-}
-
-std::size_t connection_statistics_t::get_bittorrent_connected() {
-  return connected_bittorrent_peers;
-}
-
-void inbound_scheduler_t::send_notification(){
-  daemon.send();
-}
-
-void connection_statistics_t::single_inbound_resolved() {
-  --inbound_inflight;
-}
-
-void connection_statistics_t::single_outbound_resolved() {
-  --outbound_inflight;
-}
-
-std::size_t connection_statistics_t::get_outbound_inflight() {
-  return outbound_inflight;
-}
-
-std::size_t connection_statistics_t::get_inbound_inflight() {
-  return inbound_inflight;
-}
-
-bool connection_statistics_t::has_met_connection_quota() {
-  if (connected_bittorrent_peers < bprotocol::constants::healthy_peer_count)
-    return false;
-  else
-    return true;
-}
-
-void connection_statistics_t::increment_outbound_inflight() {
-  ++outbound_inflight;
-}
-
-void connection_statistics_t::increment_connected_bittorrent_peers() {
-  connected_bittorrent_peers++;
-}
-
-void connection_statistics_t::decrement_connected_bittorrent_peers() {
-  if (connected_bittorrent_peers == 0)
-    return;
-  connected_bittorrent_peers--;
 }
 
 void PeerConnectionManager::initialize_server_socket() {
@@ -322,7 +280,7 @@ int PeerConnectionManager::initialize_libev() {
 }
 
 PeerConnectionManager::PeerConnectionManager(TorrentFile& a, pconnection_queue& b)
-  :event_loop(initialize_libev()), inbound_connection_scheduler(*this),
+  :event_loop(initialize_libev()), statistics(event_loop, tick_duration), inbound_connection_scheduler(*this),
    torrent(a), handshake(compute_handshake()), connects(b)
 {
   ev_set_userdata(event_loop.raw_loop, this);
@@ -477,6 +435,7 @@ void PeerConnectionManager::handle_peer_failure(PeerConnection& peer) {
   peer.send_buffer.reset();
   peer.listener.for_timer.set( bprotocol::constants::peer::retry_timeout * peer.stats.failures );
   peer.listener.for_timer.start();
+  statistics.increment_failed();
 }
 
 void PeerConnectionManager::peer_timer_callback(ev::timer& timer, int) {
@@ -490,6 +449,8 @@ void PeerConnectionManager::peer_timer_callback(ev::timer& timer, int) {
     manager.stop_connection_watchers(peer);
     peer_failure_update new_failure { peer_slot, peer_slot->generation() };
     manager.retry_queue.push(new_failure);
+    manager.statistics.decrement_failed();
+    manager.statistics.increment_peers_in_retry();
     return;
   }
   // should coalesce to this when in another state, DISCOVERED, HANDSHAKE and DISCONNECTED.
@@ -699,4 +660,59 @@ void PeerConnectionManager::server_socket_callback(ev::io& server, int event){
 
 int PeerConnectionManager::get_listening_port() {
   return outbound_connection_server.parameters.port;
+}
+
+beamable_spsc_t<ipv4_peer_address, 100>& PeerConnectionManager::get_ipv4_consumer() {
+  return discoveries.beamable_spsc;
+}
+
+void PeerConnectionManager::start_manager() {
+  event_loop.run();
+}
+
+connection_statistics_t::connection_statistics_t(ev::dynamic_loop& loop, double tick_duration)
+  : statistics_printer(loop)
+{
+  statistics_printer.set<connection_statistics_t, &connection_statistics_t::tick_printer>(this);
+  statistics_printer.set(tick_duration, tick_duration);
+}
+
+bool connection_statistics_t::has_met_connection_quota() {
+  if (connected_bittorrent_peers < bprotocol::constants::healthy_peer_count)
+    return false;
+  else
+    return true;
+}
+
+
+// I DID NOT WRITE THE TICK_PRINTER CODE BELOW.
+
+void connection_statistics_t::tick_printer() {
+
+  static bool first_run = true;
+  static const bool is_tty = isatty(fileno(stdout));
+
+  const std::vector<std::pair<const char*, std::size_t>> stats = {
+    { "connected peers",   connected_bittorrent_peers },
+    { "inbound inflight",  inbound_inflight           },
+    { "outbound inflight", outbound_inflight          },
+    { "failed peers",      failed_peers               },
+    { "peers in retry",    peers_in_retry             },
+    { "ipv4 cache",        ipv4_addr_in_cache         },
+  };
+
+  constexpr int label_width = 18;
+  const int line_count = static_cast<int>(stats.size());
+
+  if (is_tty && !first_run) std::printf("\033[%dA", line_count);
+
+  first_run = false;
+
+  for (auto& [label, value] : stats) {
+    if (is_tty) std::printf("\033[K");
+      std::printf("%-*s: %zu\n", label_width, label, value);
+  }
+
+  std::fflush(stdout);
+
 }

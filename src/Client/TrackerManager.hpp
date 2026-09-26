@@ -2,6 +2,7 @@
 #define TRACKER_MAN
 
 #include "HTTPHandler.hpp"
+#include "ThreadMessageTypes.hpp"
 #include "UDPHandler.hpp"
 #include "TorrentFile.hpp"
 #include <atomic>
@@ -145,6 +146,7 @@ private:
   manager_context_t tracker_context;
   tracker_store_t tracker_connections;
   manager_space_t manager_space;
+  beamable_spsc_t<ipv4_peer_address, 100>& discoveries;
 
   void initialize_info_hash_byte(TorrentFile&);
   void initialize_tracker_context(TorrentFile&);
@@ -175,8 +177,7 @@ private:
   void feed_peer_manager();
 
 public:
-  TrackerManager(TorrentFile&, int port);
-  void test(int);
+  TrackerManager(TorrentFile&, int port, beamable_spsc_t<ipv4_peer_address, 100>& );
   void start_tracker_manager();
   void start();
   void reannounce();

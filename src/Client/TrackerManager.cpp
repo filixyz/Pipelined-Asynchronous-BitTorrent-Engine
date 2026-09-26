@@ -2,6 +2,7 @@
 #include "Constants.hpp"
 #include "HTTPHandler.hpp"
 #include "Hasher.hpp"
+#include "ThreadMessageTypes.hpp"
 #include "TorrentFile.hpp"
 #include <array>
 #include <atomic>
@@ -56,7 +57,7 @@ void TrackerManager::initiatlize_trackers(std::vector<std::string_view> trackers
     auto [current_spot, fresh]  = tracker_connections.try_emplace(key, *this);
     auto& current               = current_spot->second;
     if (fresh) { // initializer should have its own seperat function
-      current.announce_urls.domain_name = key;
+      current.announce_url.domain_name = key;
       current.timers.maximum.set(event.loop);
       current.timers.minimum.set(event.loop);
       current.timers.maximum.set<&TrackerManager::tracker_timeout_handler> ();
@@ -65,7 +66,7 @@ void TrackerManager::initiatlize_trackers(std::vector<std::string_view> trackers
       current.timers.minimum.data = &current;
     }
     tag_http_presence(url, current);
-    auto& list = current.announce_urls.list;
+    auto& list = current.announce_url.list;
     if (std::find(list.begin(), list.end(), url) == list.end()) {
       list.push_back(std::string(url));
     }
@@ -75,7 +76,7 @@ void TrackerManager::initiatlize_trackers(std::vector<std::string_view> trackers
 
 void TrackerManager::populate_manager_space() {
 
-  std::cout << "populate_manager_space domain\n";
+  // std::cout << "populate_manager_space domain\n";
 
   for(auto& pair: tracker_connections) {
     auto& trkr = pair.second;
@@ -112,8 +113,8 @@ void TrackerManager::initialize_state_system() {
   event.signal.start();
 }
 
-TrackerManager::TrackerManager(TorrentFile& torrent_, int port)
-  : event(initialize_libev()) ,protocol(event.loop), tracker_context() {
+TrackerManager::TrackerManager(TorrentFile& torrent_, int port, beamable_spsc_t<ipv4_peer_address, 100>& consumer_)
+  : event(initialize_libev()) ,protocol(event.loop), tracker_context(), discoveries(consumer_) {
   initialize_info_hash_byte(torrent_);
   initialize_tracker_context(torrent_);
   initiatlize_trackers(torrent_.get_tracker_urls());
@@ -179,7 +180,7 @@ int TrackerManager::get_retry_seconds(const Tracker* trkr) {
 void TrackerManager::arm_timer(ev::timer& timer, double duration) {
   timer.set(duration);
   timer.start();
-  std::cout << " :duration set "  << duration << '\n';
+  // std::cout << " :duration set "  << duration << '\n';
 }
 
 void TrackerManager::disarm_timer(ev::timer& timer) {
@@ -368,11 +369,4 @@ void TrackerManager::update_context(std::size_t dwn, std::size_t upd) {
   tracker_context.downloaded += dwn;
   tracker_context.uploaded   += upd;
   tracker_context.left       -= dwn;
-}
-
-void TrackerManager::test(int seconds) {
-  std::cout << "== Test started ==\n";
-  start_tracker_manager();
-  std::cout << "== Test ended ==\n";
-  return (void) seconds;
 }

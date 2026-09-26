@@ -1,7 +1,11 @@
+#include "ThreadMessageTypes.hpp"
 #include "TrackerManager.hpp"
 #include "../Bencoder/Bencode.hpp"
+#include <array>
+#include <cstring>
 #include <exception>
 #include <memory>
+#include <span>
 #include <sstream>
 #include <string>
 
@@ -17,8 +21,9 @@ void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
     announce_url.just_failed = false;
   }
 
-  if (parse.contains("warning message"))
-    std::cout << parse["warning message"];
+  if (parse.contains("warning message")) {
+    // log here
+  }
 
   if (parse.contains("interval")) {
     timers.maximum_duration = parse["interval"].get_data<ben::num>();
@@ -33,8 +38,36 @@ void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
   if (parse.contains("tracker id"))
     tracker_id = parse["tracker id"].get_data<ben::str>();
 
-  if (parse.contains("peers"))
-    std::cout << parse["peers"];
+{
+
+  constexpr std::size_t iport_length = sizeof (ipv4_peer_address::iport);
+
+  if (!parse.contains("peers")) return;
+
+  std::span<std::byte> peer_binaries = std::as_writable_bytes (std::span(
+    parse["peers"].get_data<ben::str>()
+  ));
+
+  if (peer_binaries.empty() or peer_binaries.size() % iport_length != 0) return;
+
+  bool notify_consumer = false; while (!peer_binaries.empty()) {
+
+    ipv4_peer_address new_addr;
+    auto current_addr = peer_binaries.first(iport_length);
+    std::memcpy(new_addr.iport.data(), current_addr.data(), iport_length);
+    peer_binaries = peer_binaries.subspan(iport_length);
+
+    // This enqueue is lossy. if consumers queue is full the current address being enqueued is lost if peer_binaries
+    // is not empty and the the queue has been drained somewhat the current address will successfully push
+
+    if ( manager.discoveries.queue.push(std::move(new_addr)) && !notify_consumer)
+      notify_consumer = true;
+
+  }
+
+  if (notify_consumer) manager.discoveries.consumer.send();
+
+}
 
   arm_timer(timers.maximum, timers.maximum_duration);
 
@@ -64,8 +97,7 @@ void TrackerManager::Tracker::inactive_state_handler() {
   }
 
   // cycle to next http url
-  bool url_cycle_exhausted;
-  do
+  bool url_cycle_exhausted; do
     url_cycle_exhausted = seek_to_next_url();
   while ( current_proto != tracker_proto_t::http ); // udp failsafe
 
@@ -76,8 +108,6 @@ void TrackerManager::Tracker::inactive_state_handler() {
     timers.maximum_duration = retry_for_new_url;
   }
 
-  //std::cout << get_url() << " failed tracker -> " << " online: "<< context.online << " -> "
-  //  << "failed idx: " << announce_urls.failed_idx << " current idx: " << announce_urls.current_idx << " urls: " << announce_urls.list.size();
   arm_timer(timers.maximum, timers.maximum_duration);
 
   if (manager.tracker_context.active) {
@@ -108,7 +138,7 @@ void TrackerManager::Tracker::do_on_success() {
 
     // tracker responded with rubbish bencode
     manager.tracker_connections.erase(announce_url.domain_name);
-    std::cout << "bencoded exception: " << e.what() << '\n';
+    // log here.
     return;
 
   }
@@ -116,7 +146,7 @@ void TrackerManager::Tracker::do_on_success() {
   ben::dic& parsed_dict = parse->get_data<ben::dic>();
 
   if (parsed_dict.contains("failure reason"))  {
-    std::cout << parsed_dict["failure reason"];
+    // log here.
     inactive_state_handler();
     return;
   }

@@ -42,23 +42,43 @@ struct peer_failure_update {
   std::size_t cached_generation;
 };
 
+struct pdiscovery_queue_ipv4_t {
+  beamable_spsc_t<ipv4_peer_address, 100> beamable_spsc;
+  overwritable_cache<ipv4_peer_address, 200> cache;
+};
+
+constexpr static double tick_duration = 1.0;
+
 class connection_statistics_t {
-  std::size_t connected_bittorrent_peers;
-  std::size_t inbound_inflight;
-  std::size_t outbound_inflight;
+  std::size_t connected_bittorrent_peers{0};
+  std::size_t inbound_inflight{0};
+  std::size_t outbound_inflight{0};
+  std::size_t failed_peers{0};
+  std::size_t peers_in_retry{0};
+  std::size_t ipv4_addr_in_cache{0};
+  ev::timer statistics_printer;
+  void tick_printer();
 public:
+
+  connection_statistics_t(ev::dynamic_loop& loop, double tick_duration);
   bool has_met_connection_quota();
 
-  std::size_t get_bittorrent_connected();
-  std::size_t get_inbound_inflight();
-  std::size_t get_outbound_inflight();
+  inline std::size_t get_bittorrent_connected()       { return connected_bittorrent_peers; }
+  inline std::size_t get_inbound_inflight()           { return inbound_inflight; };
+  inline std::size_t get_outbound_inflight()          { return outbound_inflight; }
+  inline void increment_outbound_inflight()           { ++outbound_inflight; }
+  inline void increment_inbound_inflight()            { ++inbound_inflight; }
+  inline void single_inbound_resolved()               { --outbound_inflight; }
+  inline void single_outbound_resolved()              { --inbound_inflight; }
+  inline void increment_connected_bittorrent_peers()  { ++connected_bittorrent_peers; }
+  inline void decrement_connected_bittorrent_peers()  { --connected_bittorrent_peers; }
+  inline void increment_failed()                      { ++failed_peers; };
+  inline void decrement_failed()                      { --failed_peers; };
+  inline void increment_peers_in_retry()              { ++peers_in_retry; }
+  inline void decrement_peers_in_retry()              { --peers_in_retry; }
+  inline void increment_ipv4_addr_in_cache()          { if (ipv4_addr_in_cache < 200) ++ipv4_addr_in_cache; } // fix magic number later
+  inline void decrement_ipv4_addr_in_cache()          { --ipv4_addr_in_cache; }
 
-  void increment_outbound_inflight();
-  void increment_inbound_inflight();
-  void single_inbound_resolved();
-  void single_outbound_resolved();
-  void increment_connected_bittorrent_peers();
-  void decrement_connected_bittorrent_peers();
 };
 
 class inbound_scheduler_t {
@@ -88,10 +108,6 @@ struct outbound_server_t {
   ev::io watcher;
 };
 
-struct pdiscovery_queue_ipv4_t {
-  beamable_spsc_t<ipv4_peer_address, 100> beamable_spsc;
-  overwritable_cache<ipv4_peer_address, 200> cache;
-};
 
 class PeerConnectionManager { friend class inbound_scheduler_t;
 
@@ -151,8 +167,11 @@ class PeerConnectionManager { friend class inbound_scheduler_t;
 
 public:
   PeerConnectionManager(TorrentFile&, pconnection_queue&);
-  void run_manager();
+
   int get_listening_port();
+  beamable_spsc_t<ipv4_peer_address, 100>& get_ipv4_consumer();
+  void start_manager();
+
 };
 
 #endif

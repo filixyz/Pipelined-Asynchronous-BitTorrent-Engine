@@ -111,8 +111,8 @@ enum class pstate:  std::uint8_t  {null, DISCOVERED, HANDSHAKE, CONNECTED, DISCO
 enum class psource: std::uint8_t  {null, tracker, tcp_server};
 enum class pipv:    std::uint8_t  {null, ipv4, ipv6, ipv4maskedv6};
 using peer_id_t                =  std::array<std::byte, 20>;
-using peer_key_t               =  union { ipv4_peer_address ipv4; ipv6_peer_address ipv6; };
-using peer_sock_store_t        =  union { sockaddr_in ipv4_store; sockaddr_in6 ipv6_store; };
+union peer_key_t                  { ipv4_peer_address ipv4; ipv6_peer_address ipv6; };
+union peer_sock_store_t           { sockaddr_in ipv4_store; sockaddr_in6 ipv6_store; };
 
 struct peer_stats_t{
   std::size_t failures{0};

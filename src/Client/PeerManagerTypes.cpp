@@ -240,7 +240,7 @@ disconnect_update PeerSession::endpoint_disconnected() {
   upld_rate  = 0;
   choke.set();
   interest.reset();
-  bitfield.reset_set();
+  bitfield.clear();
   tcp.close_socket();
   recv_buffer.reset();
   send_buffer.reset();

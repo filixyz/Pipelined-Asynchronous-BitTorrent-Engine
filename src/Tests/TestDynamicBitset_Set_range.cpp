@@ -27,5 +27,4 @@ int main() {
   set.clear();
   std::cout << "any: "<< set.any() << '\n';
 
-
 }
