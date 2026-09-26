@@ -60,15 +60,15 @@ std::string_view TorrentFile::get_info_key() const {
   return transcibe.find("info")->second.get_encode();
 }
 std::string_view TorrentFile::get_torrent_name() const {
-  return info_hash->find("name")->second.get_data<std::string>();
+  return info_hash->find("name")->second.get_data<ben::str>();
 }
-int TorrentFile::get_piece_length() const {
-  return info_hash->find("piece length")->second.get_data<int>();
+std::int64_t TorrentFile::get_piece_length() const {
+  return info_hash->find("piece length")->second.get_data<ben::num>();
 }
 
 std::string_view TorrentFile::get_piece_hash(int index) const {
   const std::string &pieces_hash =
-      info_hash->find("pieces")->second.get_data<std::string>();
+      info_hash->find("pieces")->second.get_data<ben::str>();
   int hash_index = index * HASH_STRING_LENGTH;
   return std::string_view(&pieces_hash[hash_index], HASH_STRING_LENGTH);
 }

@@ -1,8 +1,9 @@
 #include "Bencode.hpp"
+#include <cstdint>
 #include <string>
 #include <algorithm>
 
-std::string Bendata::encode(int value){
+std::string Bendata::encode(std::int64_t value){
   return std::string{'i'} + std::to_string(value) + 'e';
 }
 std::string Bendata::encode(const std::string& value){

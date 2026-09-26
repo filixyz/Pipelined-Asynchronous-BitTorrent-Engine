@@ -159,58 +159,6 @@ recv_transact PeerConnection::recv_messages() {
   return tcp.recv(recv_buffer);
 }
 
-
-template <sock_clbk_t socket_callback, timer_clbk_t timer_callback>
-void PeerConnection::initialize_connection (
-    peer_key_t& _key, pipv ip_version, psource peer_source, pstate peer_state, ev::dynamic_loop& event_loop
-  ) {
-  listener.for_sock.set(event_loop);
-  listener.for_sock.set<socket_callback>();
-  listener.for_sock.data = this;
-
-  listener.for_timer.set(event_loop);
-  listener.for_timer.set<timer_callback>();
-  listener.for_timer.data = this;
-
-  std::memcpy(&key, &_key, sizeof(key));
-  IPv = ip_version;
-  source = peer_source;
-  state = peer_state;
-
-  if (source == psource::tracker) {
-    if (IPv == pipv::ipv4) {
-      store.ipv4_store.sin_family = AF_INET;
-      std::memcpy(&store.ipv4_store.sin_addr, &key.ipv4.iport, 4);
-      std::memcpy(&store.ipv4_store.sin_port, &key.ipv4.iport[5], 2);
-    } else if (IPv == pipv::ipv6 || IPv == pipv::ipv4maskedv6) {
-      store.ipv6_store.sin6_family = AF_INET6;
-      std::memcpy(&store.ipv6_store.sin6_addr, &key.ipv6.iport, 16);
-      std::memcpy(&store.ipv6_store.sin6_port, &key.ipv6.iport[17], 2);
-    }
-  }
-}
-
-void PeerConnection::teardown_connection() {
-  listener.stop();
-  assert(tcp.get_socket() == -1);
-  std::memset(&store, 0, sizeof(store));
-  recv_buffer.reset();
-  send_buffer.reset();
-  listener.for_sock.fd = -1;
-  listener.for_sock.data = nullptr;
-  listener.for_timer.data = nullptr;
-  {
-    key.ipv4.iport.fill(std::byte{0});
-    key.ipv6.iport.fill(std::byte{0});
-  }
-  peer_id.fill(std::byte{0});
-  state = pstate::null;
-  source = psource::null;
-  IPv = pipv::null;
-  outgoing_frame_cursor.reset();
-  stats.reset();
-}
-
 PeerConnection PeerSession::dummypeer{};
 
 send_transact PeerSession::send_messages() {

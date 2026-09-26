@@ -1,13 +1,14 @@
 #include "../Errorhandlers/BittorentErrors.hpp"
 #include "Bencode.hpp"
 #include <cctype>
+#include <cstdint>
 #include <cwctype>
 #include <ios>
 #include <string>
 
-bool noexcept_stoi(std::string str, int &result) {
+bool noexcept_stoi(std::string str, std::int64_t &result) {
   try {
-    result = std::stoi(str);
+    result = std::stoll(str);
   } catch (...) {
     return error_with_reason("noexcept_stoi failed");
   }
@@ -19,7 +20,7 @@ bool bendecode_string(std::istream &of, Bendata &data) {
   std::string size;
   while (of >> c && c != ':')
     size += c;
-  int size_int;
+  std::int64_t size_int;
   if (!noexcept_stoi(size, size_int))
     return false;
   ben::str result;
@@ -47,7 +48,7 @@ bool bendecode_integer(std::istream &of, Bendata &data) {
   char c;
   while (of >> c && c != BEN_DELIMETER)
     number_str += c;
-  int value;
+  std::int64_t value;
   if (!noexcept_stoi(number_str, value))
     return false;
   Bendata temp_int(value);

@@ -24,7 +24,7 @@ public:
   std::string_view get_info_key() const;
   std::string_view get_torrent_name() const;
   std::span<const std::byte> get_info_hash_bytes() const;
-  int get_piece_length() const;
+  std::int64_t get_piece_length() const;
   std::string_view get_piece_hash(int index) const;
   bool torrent_is_file() const;
   std::int64_t get_download_size() const;

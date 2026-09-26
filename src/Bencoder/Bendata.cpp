@@ -1,12 +1,13 @@
 #include "Bencode.hpp"
+#include <cstdint>
 
-Bendata::Bendata(int number) : actual_value{number}, _t{BEN_NUM_T} {}
+Bendata::Bendata(std::int64_t number) : actual_value{number}, _t{BEN_NUM_T} {}
 Bendata::Bendata(std::string string) : actual_value{string}, _t{BEN_STR_T} {}
 
 Bendata::Bendata(Bendata_init_flag flag) {
   switch (flag) {
   case Bendata_init_flag::integer:
-    actual_value.emplace<int>();
+    actual_value.emplace<std::int64_t>();
     _t = BEN_NUM_T;
     break;
   case Bendata_init_flag::string:
@@ -36,7 +37,7 @@ std::ostream &operator<<(std::ostream &os, const Bendata &ben_object) {
     break;
   }
   case BEN_NUM_T: {
-    os << std::get<int>(ben_object.actual_value);
+    os << std::get<std::int64_t>(ben_object.actual_value);
     break;
   }
   case BEN_LIS_T: {

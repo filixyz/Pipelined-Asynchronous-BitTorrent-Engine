@@ -20,6 +20,7 @@
 //    function but for dictionaries) Bendecode_list -> overload 2 (same motive
 //    as previous function but for lists)
 
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <string>
@@ -44,13 +45,13 @@ struct BenDictPair {
 
 class Bendata {
 private:
-  std::variant<int, std::string, std::vector<Bendata>,std::map<std::string, Bendata>> actual_value;
+  std::variant<std::int64_t, std::string, std::vector<Bendata>,std::map<std::string, Bendata>> actual_value;
   std::string bencode;
   ben_t _t;
 public:
   Bendata() = default;
   ~Bendata() = default;
-  Bendata(int number);
+  Bendata(std::int64_t number);
   Bendata(std::string string);
   explicit Bendata(Bendata_init_flag flag);
 
@@ -64,7 +65,7 @@ public:
   friend bool bendecode_dictionary(std::istream &, Bendata &);
   friend bool bendecode_list(std::istream &, Bendata &);
 
-  static std::string encode(int);
+  static std::string encode(std::int64_t);
   static std::string encode(const std::string&);
   static std::string encode_to_list(std::vector<std::string>);
   static std::string encode_to_dict(std::vector<BenDictPair>);
@@ -88,7 +89,7 @@ Bendata bendecode_from_file(std::istream &);
 
 namespace ben {
 using str = std::string;
-using num = int;
+using num = std::int64_t;
 using lis = std::vector<Bendata>;
 using dic = std::map<str, Bendata>;
 } // namespace ben
