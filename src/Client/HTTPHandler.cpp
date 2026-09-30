@@ -17,8 +17,7 @@ HTTPRequest::~HTTPRequest() {
 }
 
 HTTPHandler::HTTPHandler(ev::dynamic_loop& ev_loop): event_loop(ev_loop), curl_timer(event_loop) {
-  multi = curl_multi_init();
-  if (multi) std::cout << "HTPP BACKEND INITIATED\n";
+  multi = curl_multi_init();;
   curl_multi_setopt(multi, CURLMOPT_SOCKETFUNCTION, socket_callback);
   curl_multi_setopt(multi, CURLMOPT_SOCKETDATA, this);
   curl_multi_setopt(multi, CURLMOPT_TIMERFUNCTION, timer_callback);
@@ -196,6 +195,5 @@ int HTTPHandler::timer_callback(CURLM *multi, long timeout_ms, void *userp) {
 }
 
 void HTTPHandler::start_backend() {
-  if (curl_multi_socket_action(multi, CURL_SOCKET_TIMEOUT, 0, &actives) == CURLM_OK)
-    std::cout << "HTTP BACKEND ONLINE";
+  if (curl_multi_socket_action(multi, CURL_SOCKET_TIMEOUT, 0, &actives) == CURLM_OK){};
 }

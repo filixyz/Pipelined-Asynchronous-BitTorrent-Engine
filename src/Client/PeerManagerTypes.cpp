@@ -1,7 +1,9 @@
 #include "PeerManagerTypes.hpp"
+#include "Hasher.hpp"
 #include <cerrno>
 #include <cstring>
 #include <ev++.h>
+#include <iostream>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -31,7 +33,17 @@ bool peer_nonblock_tcp::open_socket(int __domain) {
   return true;
 }
 
+void sockaddr_in_printer(const sockaddr_in* store_ ) {
+  auto& store = *store_;
+  std::span<const std::byte> addr ( reinterpret_cast<const std::byte*>(&store.sin_addr), sizeof(store.sin_addr) );
+  std::span<const std::byte> port ( reinterpret_cast<const std::byte*>(&store.sin_port), sizeof(store.sin_port) );
+  std::cout << "addr bytes: "  << Hasher::hex_stringify_hash(addr) << " port bytes: " << Hasher::hex_stringify_hash(port) << '\n';
+}
+
 pconnect_return_t peer_nonblock_tcp::pconnect( const sockaddr* addr,int address_family) {
+
+  sockaddr_in_printer((sockaddr_in*)addr);
+
   if (__socket == -1) {
     perrno = EBADF;
     return failed;

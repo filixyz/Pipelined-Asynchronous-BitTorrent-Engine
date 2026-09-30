@@ -10,9 +10,9 @@ int main(int argc, char* argv[]) {
 
   InitCurl initialize_curl{};
 
-  TorrentFile     torrent       {argv[1]};
-  PeerManager     peer_manager  {torrent};
-  TrackerManager  tracker       {torrent, peer_manager.get_listening_port(), peer_manager.get_ipv4_consumer() };
+  TorrentFile     torrent       { argv[1] };
+  PeerManager     peer_manager  { torrent };
+  TrackerManager  tracker       { torrent, peer_manager.get_listening_port(), peer_manager.get_ipv4_consumer() };
 
   std::jthread peer_daemon {
     &PeerManager::start_connection_manager_on_current_thread, &peer_manager

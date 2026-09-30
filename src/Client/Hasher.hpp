@@ -18,7 +18,7 @@ struct Hasher {
     return digest;
   }
 
-  template <std::size_t N>  static std::string hex_stringify_hash(const std::span<std::byte, N>& byte_sequence) {
+  template <std::size_t N>  static std::string hex_stringify_hash(const std::span<const std::byte, N>& byte_sequence) {
     std::stringstream hex_stream;
     hex_stream << std::hex;
     for (const std::byte& byt: byte_sequence) {

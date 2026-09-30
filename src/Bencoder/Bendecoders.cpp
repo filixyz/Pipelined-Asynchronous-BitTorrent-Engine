@@ -133,7 +133,6 @@ bool bendecode_dictionary(std::istream &of, Bendata &data) {
 Bendata bendecode_from_file(std::istream &file) {
   file >> std::noskipws;
   Bendata parsed;
-  if (!get_bendata_from_stream(file, parsed))
-    throw Invalid_Bencode_File{};
+  if (!get_bendata_from_stream(file, parsed)) throw Invalid_Bencode_File{};
   return parsed;
 }

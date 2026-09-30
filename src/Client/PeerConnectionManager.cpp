@@ -6,6 +6,7 @@
 #include <cstring>
 #include <ev++.h>
 #include <ev.h>
+#include <ios>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -16,6 +17,15 @@
 #include "ThreadMessageTypes.hpp"
 #include "bittorrent_messages.hpp"
 
+void PeerConnection::print() {
+
+  std::span<const std::byte> key_view (reinterpret_cast<const std::byte*>(&key), sizeof(key));
+
+  std::cout << std::hex << Hasher::hex_stringify_hash( key_view ) << " current peer address\n" << std::dec;
+
+  std::cout << tcp.get_socket() << " assigned socket\n";
+
+}
 
 template <sock_clbk_t socket_callback, timer_clbk_t timer_callback>
 void PeerConnection::initialize_connection (
@@ -38,11 +48,11 @@ void PeerConnection::initialize_connection (
     if (IPv == pipv::ipv4) {
       store.ipv4_store.sin_family = AF_INET;
       std::memcpy(&store.ipv4_store.sin_addr, &key.ipv4.iport, 4);
-      std::memcpy(&store.ipv4_store.sin_port, &key.ipv4.iport[5], 2);
+      std::memcpy(&store.ipv4_store.sin_port, &key.ipv4.iport[4], 2);
     } else if (IPv == pipv::ipv6 || IPv == pipv::ipv4maskedv6) {
       store.ipv6_store.sin6_family = AF_INET6;
       std::memcpy(&store.ipv6_store.sin6_addr, &key.ipv6.iport, 16);
-      std::memcpy(&store.ipv6_store.sin6_port, &key.ipv6.iport[17], 2);
+      std::memcpy(&store.ipv6_store.sin6_port, &key.ipv6.iport[16], 2);
     }
   }
 }
@@ -87,10 +97,13 @@ void PeerConnectionManager::initialize_manager_watchers() {
   server.watcher.set(event_loop);
   server.watcher.set(server.parameters.socket, ev::READ);
   server.watcher.set<PeerConnectionManager, &PeerConnectionManager::server_socket_callback>(this);
+  server.watcher.start();
   discoveries.beamable_spsc.consumer.set(event_loop);
   discoveries.beamable_spsc.consumer.set<PeerConnectionManager, &PeerConnectionManager::drain_discovered>(this);
+  discoveries.beamable_spsc.consumer.start();
   disconnects.consumer.set(event_loop);
   disconnects.consumer.set<PeerConnectionManager, &PeerConnectionManager::notify_disconnected>(this);
+  disconnects.consumer.start();
 }
 
 bittorrent_messages::handshake_t PeerConnectionManager::compute_handshake() {
@@ -134,7 +147,7 @@ void PeerConnectionManager::deregister_from_map(PeerConnection& peer) {
 // different port) and returns true
 bool PeerConnectionManager::connect(PeerConnection& peer) {
 
-  assert (peer.source != psource::tracker);
+  assert (peer.source == psource::tracker);
 
   sockaddr* sock_addr = reinterpret_cast<sockaddr*>(&peer.store);
 
@@ -211,6 +224,7 @@ bool inbound_scheduler_t::discovered_peer_scheduler() {
       manager.delete_peer_connection(peer);
       continue;
     }
+    peer.print();
     return true;
   }
   return false;
@@ -287,8 +301,9 @@ void inbound_scheduler_t::round_robin_establisher_scheduler() {
 }
 
 inbound_scheduler_t::inbound_scheduler_t(PeerConnectionManager& __manager): manager(__manager) {
-  daemon.set<inbound_scheduler_t, &inbound_scheduler_t::round_robin_establisher_scheduler>(this);
   daemon.set(manager.event_loop);
+  daemon.set<inbound_scheduler_t, &inbound_scheduler_t::round_robin_establisher_scheduler>(this);
+  daemon.start();
 }
 
 void PeerConnectionManager::initialize_server_socket() {
@@ -529,6 +544,7 @@ bool PeerConnectionManager::peer_transport_level_connected(PeerConnection& peer)
   if (sock_opt_return<0)
     assert(false && "getsockopt failed");
   else if (error != 0) {
+    peer.tcp.perrno = error;
     return false;
   }
   return true;
@@ -604,10 +620,20 @@ void PeerConnectionManager::handle_peer_application_level_handshake(PeerConnecti
 }
 
 void PeerConnectionManager::handle_peer_transport_level_initiations(PeerConnection& peer, int event) {
+  std::cout << "peer initiating transport level initiations \n";
+
+  if (event & ev::READ) {
+    // not needed. for transport level initiations
+    std::cout << "for some reason peer intercepted a read event\n";
+  }
+
   if (event & ev::WRITE)
   {
+    std::cout << "peer intercepted write event\n";
     if ( !peer_transport_level_connected(peer)) {
       handle_peer_failure(peer);
+      std::cout << "peer failed when trying to validate connetion status\n";
+      std::cout << peer.tcp.get_errno() << "  This is the transport level errno\n ";
       return;
     }
 
@@ -628,9 +654,6 @@ void PeerConnectionManager::handle_peer_transport_level_initiations(PeerConnecti
     return;
   }
 
-  if (event & ev::READ) {
-    // not needed. for transport level initiations
-  }
 }
 
 void PeerConnectionManager::peer_socket_callback(ev::io& sw, int event) {

@@ -68,8 +68,8 @@ public:
   inline std::size_t get_outbound_inflight()          { return outbound_inflight; }
   inline void increment_outbound_inflight()           { ++outbound_inflight; }
   inline void increment_inbound_inflight()            { ++inbound_inflight; }
-  inline void single_inbound_resolved()               { --outbound_inflight; }
-  inline void single_outbound_resolved()              { --inbound_inflight; }
+  inline void single_inbound_resolved()               { --inbound_inflight; }
+  inline void single_outbound_resolved()              { --outbound_inflight; }
   inline void increment_connected_bittorrent_peers()  { ++connected_bittorrent_peers; }
   inline void decrement_connected_bittorrent_peers()  { --connected_bittorrent_peers; }
   inline void increment_failed()                      { ++failed_peers; };
@@ -82,25 +82,25 @@ public:
 };
 
 class inbound_scheduler_t {
-    static constexpr std::size_t handlers_count {3};
-    enum spot_t: std::uint8_t {discovered, disconnected, failed};
-  private:
-    PeerConnectionManager& manager;
-    spot_t current {discovered};
-    std::array<bool, handlers_count> empties {false};
-    ev::async daemon;
+  static constexpr std::size_t handlers_count {3};
+  enum spot_t: std::uint8_t {discovered, disconnected, failed};
+private:
+  PeerConnectionManager& manager;
+  spot_t current {discovered};
+  std::array<bool, handlers_count> empties {false};
+  ev::async daemon;
 
-    bool discovered_peer_scheduler();
-    bool disconnected_peer_scheduler();
-    bool failed_peer_scheduler();
+  bool discovered_peer_scheduler();
+  bool disconnected_peer_scheduler();
+  bool failed_peer_scheduler();
 
-    void plus_mask_current(std::size_t spot);
-    void round_robin_establisher_scheduler();
-    bool initiate_connect(PeerConnection&);
+  void plus_mask_current(std::size_t spot);
+  void round_robin_establisher_scheduler();
+  bool initiate_connect(PeerConnection&);
 
-  public:
-    inbound_scheduler_t(PeerConnectionManager& __manager);
-    void send_notification();
+public:
+  inbound_scheduler_t(PeerConnectionManager& __manager);
+  void send_notification();
 };
 
 struct outbound_server_t {

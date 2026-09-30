@@ -2,6 +2,7 @@
 #include "TrackerManager.hpp"
 #include "../Bencoder/Bencode.hpp"
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <memory>
@@ -57,10 +58,12 @@ void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
     std::memcpy(new_addr.iport.data(), current_addr.data(), iport_length);
     peer_binaries = peer_binaries.subspan(iport_length);
 
+    //std::cout << Hasher::hex_stringify_hash(std::as_bytes(current_addr)) << " bytes retrieved from tracker ";
+
     // This enqueue is lossy. if consumers queue is full the current address being enqueued is lost if peer_binaries
     // is not empty and the the queue has been drained somewhat the current address will successfully push
 
-    if ( manager.discoveries.queue.push(std::move(new_addr)) && !notify_consumer)
+    if ( manager.discoveries.queue.push(new_addr) && !notify_consumer)
       notify_consumer = true;
 
   }
@@ -129,7 +132,7 @@ void TrackerManager::Tracker::do_on_success() {
   std::unique_ptr<Bendata> parse;
 
   try  {
-
+    std::cout << user_space.data << '\n';
     std::istringstream bencode(user_space.data);
     parse = std::make_unique<Bendata>(bendecode_from_file(bencode));
     parse->get_data<ben::dic>(); // validation check.
@@ -138,6 +141,7 @@ void TrackerManager::Tracker::do_on_success() {
 
     // tracker responded with rubbish bencode
     manager.tracker_connections.erase(announce_url.domain_name);
+    std::cout << "parsed_nonsense\n";
     // log here.
     return;
 

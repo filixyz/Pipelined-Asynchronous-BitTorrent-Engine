@@ -158,6 +158,8 @@ struct PeerConnection {
 
   recv_transact recv_messages();
   send_transact send_messages();
+
+  void print();
 };
 
 struct connect_update {
