@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) {
 
   TorrentFile     torrent       { argv[1] };
   PeerManager     peer_manager  { torrent };
-  TrackerManager  tracker       { torrent, peer_manager.get_listening_port(), peer_manager.get_ipv4_consumer() };
+  TrackerManager  tracker       { torrent, peer_manager.get_listening_port(), peer_manager.get_peer_contacts_consumer() };
 
   std::jthread peer_daemon {
     &PeerManager::start_connection_manager_on_current_thread, &peer_manager

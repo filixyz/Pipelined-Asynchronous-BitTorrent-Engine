@@ -1,48 +1,39 @@
 #include "Bencode.hpp"
 #include <cstdint>
 
-Bendata::Bendata(std::int64_t number) : actual_value{number}, _t{BEN_NUM_T} {}
-Bendata::Bendata(std::string string) : actual_value{string}, _t{BEN_STR_T} {}
+Bendata::Bendata(std::int64_t number) : actual_value{number}, _t{bencode_type::integer} {}
 
-Bendata::Bendata(Bendata_init_flag flag) {
-  switch (flag) {
-  case Bendata_init_flag::integer:
-    actual_value.emplace<std::int64_t>();
-    _t = BEN_NUM_T;
-    break;
-  case Bendata_init_flag::string:
-    actual_value.emplace<std::string>();
-    _t = BEN_STR_T;
-    break;
-  case Bendata_init_flag::dictionary:
-    actual_value.emplace<std::map<std::string, Bendata>>();
-    _t = BEN_DIC_T;
-    break;
-  case Bendata_init_flag::list:
-    actual_value.emplace<std::vector<Bendata>>();
-    _t = BEN_LIS_T;
-    break;
+Bendata::Bendata(std::string string) : actual_value{string}, _t{bencode_type::string} {}
+
+Bendata::Bendata(bencode_type type) {
+
+  switch (type) {
+  case bencode_type::integer:     actual_value.emplace<bendecoded::integer>();    break;
+  case bencode_type::string:      actual_value.emplace<bendecoded::string>();     break;
+  case bencode_type::dictionary:  actual_value.emplace<bendecoded::dictionary>(); break;
+  case bencode_type::list:        actual_value.emplace<bendecoded::list>();       break;
   }
+  _t = type;
+
 }
 
-// templates were here
+bencode_type Bendata::type() const { return _t; }
 
-ben_t Bendata::get_t() const { return _t; }
 const std::string &Bendata::get_encode() const { return bencode; }
 
 std::ostream &operator<<(std::ostream &os, const Bendata &ben_object) {
   switch (ben_object._t) {
-  case BEN_STR_T: {
+  case bencode_type::string: {
     os << '\"' << std::get<std::string>(ben_object.actual_value) << '\"';
     break;
   }
-  case BEN_NUM_T: {
+  case bencode_type::integer: {
     os << std::get<std::int64_t>(ben_object.actual_value);
     break;
   }
-  case BEN_LIS_T: {
+  case bencode_type::list: {
     const std::vector<Bendata> &list =
-        ben_object.get_data<std::vector<Bendata>>();
+        ben_object.get_as<bendecoded::list>();
     os << '[';
     for (size_t i = 0; i < list.size(); ++i) {
       if (i == list.size() - 1)
@@ -53,9 +44,9 @@ std::ostream &operator<<(std::ostream &os, const Bendata &ben_object) {
     os << ']';
     break;
   }
-  case BEN_DIC_T: {
+  case bencode_type::dictionary: {
     const std::map<std::string, Bendata> &dicts =
-        ben_object.get_data<std::map<std::string, Bendata>>();
+        ben_object.get_as<bendecoded::dictionary>();
     std::size_t d_size = dicts.size(), index = 0;
     os << '{';
     for (const auto &x : dicts) {

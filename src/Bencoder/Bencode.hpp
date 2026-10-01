@@ -30,41 +30,51 @@
 // NOTE; in cass of bug; changed function definition of decoders
 // from ifstream& type paramaters to istream&
 
-enum class Bendata_init_flag { integer, string, dictionary, list };
-using ben_t = char;
-constexpr ben_t BEN_DIC_T = 'd';
-constexpr ben_t BEN_LIS_T = 'l';
-constexpr ben_t BEN_NUM_T = 'i';
-constexpr ben_t BEN_STR_T = 's';
-constexpr ben_t BEN_DELIMETER = 'e';
+enum bencode_type: char {
+  string      = 's',
+  integer     = 'i',
+  list        = 'l',
+  dictionary  = 'd',
+};
+
+constexpr char bencode_delimeter = 'e';
 
 struct BenDictPair {
   std::string key;
   std::string bencoded_value;
 };
 
+class Bendata;
+
+namespace bendecoded {
+  using string      = typename std::string;
+  using integer     = typename std::int64_t;
+  using list        = typename std::vector<Bendata>;
+  using dictionary  = typename std::map<std::string, Bendata>;
+}
+
 class Bendata {
-private:
+
   std::variant<std::int64_t, std::string, std::vector<Bendata>,std::map<std::string, Bendata>> actual_value;
   std::string bencode;
-  ben_t _t;
+  bencode_type _t;
+
 public:
+
   Bendata() = default;
-  ~Bendata() = default;
   Bendata(std::int64_t number);
   Bendata(std::string string);
-  explicit Bendata(Bendata_init_flag flag);
+  explicit Bendata(bencode_type type);
 
-  template <typename T> T &get_data();
-  template <typename T> const T &get_data() const;
-  ben_t get_t() const;
+  template <typename T> T &get_as();
+  template <typename T> const T &get_as() const;
+  bencode_type type() const;
   const std::string &get_encode() const;
 
-  friend bool bendecode_integer(std::istream &, Bendata &);
-  friend bool bendecode_string(std::istream &, Bendata &);
-  friend bool bendecode_dictionary(std::istream &, Bendata &);
-  friend bool bendecode_list(std::istream &, Bendata &);
-
+  static bool decode_integer(std::istream &, Bendata &);
+  static bool decode_string(std::istream &, Bendata &);
+  static bool decode_dictionary(std::istream &, Bendata &);
+  static bool decode_list(std::istream &, Bendata &);
   static std::string encode(std::int64_t);
   static std::string encode(const std::string&);
   static std::string encode_to_list(std::vector<std::string>);
@@ -73,25 +83,22 @@ public:
   friend std::ostream &operator<<(std::ostream &os, const Bendata &ben_object);
 };
 
-template <typename T> T &Bendata::get_data() {
+template <typename T> T &Bendata::get_as() {
   T &value = std::get<T>(actual_value);
   return value;
 }
 
-template <typename T>
-const T &Bendata::get_data() const {
+template <typename T> const T &Bendata::get_as() const {
   const T &value = std::get<T>(actual_value);
   return value;
 }
 
-bool get_bendata_from_stream(std::istream &, Bendata &);
-Bendata bendecode_from_file(std::istream &);
+Bendata bendecode(std::istream &);
 
-namespace ben {
-using str = std::string;
-using num = std::int64_t;
-using lis = std::vector<Bendata>;
-using dic = std::map<str, Bendata>;
-} // namespace ben
+// map containers lookup helper
+template<class M> auto* find(const typename M::key_type& key, M& map ) {
+  auto it = map.find(key);
+  return it == map.end() ? nullptr : &it->second;
+}
 
 #endif

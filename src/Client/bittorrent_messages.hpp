@@ -4,6 +4,7 @@
 #include "io_ring_buffer.hpp"
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <span>
 #include <cstddef>
 #include <cstdint>
@@ -112,9 +113,9 @@ namespace handshake {
 
   inline decode_result decode (
 
-    io_ring_buffer<length::handshake>&    buffer,
-    std::span<const std::byte>            info_hash_seq,
-    std::array<std::byte, 20>&            peer_id_ref
+    io_ring_buffer<length::handshake>&           buffer,
+    std::span<const std::byte>                   info_hash_seq,
+    std::optional<std::array<std::byte, 20>>&    peer_id_ref
 
   ) {
 
@@ -204,11 +205,14 @@ namespace handshake {
 
         if (io_view.size() < 20 ) {
           auto remaining = wraparound_steal(prepare, 20 - io_view.size());
-          std::ranges::copy(io_view, peer_id_ref.begin());
-          std::ranges::copy(remaining, peer_id_ref.begin() + io_view.size());
+
+          if (!peer_id_ref.has_value()) peer_id_ref.emplace();
+
+          std::ranges::copy(io_view, peer_id_ref.value().begin());
+          std::ranges::copy(remaining, peer_id_ref.value().begin() + io_view.size());
           break;
         } else {
-          std::ranges::copy(io_view.first(20), peer_id_ref.begin());
+          std::ranges::copy(io_view.first(20), peer_id_ref.value().begin());
           io_view = io_view.subspan(20);
           break;
         }

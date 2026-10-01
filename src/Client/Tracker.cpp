@@ -1,18 +1,23 @@
 #include "ThreadMessageTypes.hpp"
 #include "TrackerManager.hpp"
 #include "../Bencoder/Bencode.hpp"
+#include <arpa/inet.h>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <limits>
 #include <memory>
+#include <netinet/in.h>
 #include <span>
 #include <sstream>
 #include <string>
+#include <sys/socket.h>
 
 TrackerManager::Tracker::Tracker (TrackerManager& __manager) : HTTPRequest(), manager(__manager) {};
 
-void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
+void TrackerManager::Tracker::active_state_handler(bendecoded::dictionary& parse) {
 
   state = tracker_state_t::active;
 
@@ -27,44 +32,106 @@ void TrackerManager::Tracker::active_state_handler(ben::dic& parse) {
   }
 
   if (parse.contains("interval")) {
-    timers.maximum_duration = parse["interval"].get_data<ben::num>();
+    timers.maximum_duration = parse["interval"].get_as<bendecoded::integer>();
     timers.type = timer_count::one;
   }
 
   if (parse.contains("min interval")) {
-    timers.minimum_duration = parse["min interval"].get_data<ben::num>();
+    timers.minimum_duration = parse["min interval"].get_as<bendecoded::integer>();
     timers.type = timer_count::two;
   }
 
   if (parse.contains("tracker id"))
-    tracker_id = parse["tracker id"].get_data<ben::str>();
+    tracker_id = parse["tracker id"].get_as<bendecoded::string>();
 
 {
 
-  constexpr std::size_t iport_length = sizeof (ipv4_peer_address::iport);
+  static constexpr std::size_t  peer4_unit_length = 6;
+  static constexpr std::size_t  peer4_addr_length = 4;
+  static constexpr std::size_t  port_length       = 2;
+  static constexpr std::int64_t max_port          = std::numeric_limits<std::uint16_t>::max();
+
 
   if (!parse.contains("peers")) return;
 
-  std::span<std::byte> peer_binaries = std::as_writable_bytes (std::span(
-    parse["peers"].get_data<ben::str>()
-  ));
+  bool notify_consumer = false;
 
-  if (peer_binaries.empty() or peer_binaries.size() % iport_length != 0) return;
+  if (parse["peers"].type() == bencode_type::string) {
 
-  bool notify_consumer = false; while (!peer_binaries.empty()) {
+    std::span<std::byte> peer_binaries = std::as_writable_bytes (std::span(
+      parse["peers"].get_as<bendecoded::string>()
+    ));
 
-    ipv4_peer_address new_addr;
-    auto current_addr = peer_binaries.first(iport_length);
-    std::memcpy(new_addr.iport.data(), current_addr.data(), iport_length);
-    peer_binaries = peer_binaries.subspan(iport_length);
+    if (peer_binaries.empty() or peer_binaries.size() % peer4_unit_length != 0) return;
 
-    //std::cout << Hasher::hex_stringify_hash(std::as_bytes(current_addr)) << " bytes retrieved from tracker ";
+    while (!peer_binaries.empty()) {
 
-    // This enqueue is lossy. if consumers queue is full the current address being enqueued is lost if peer_binaries
-    // is not empty and the the queue has been drained somewhat the current address will successfully push
+      peer_contact new_endpoint; new_endpoint.is_v6 = false;
 
-    if ( manager.discoveries.queue.push(new_addr) && !notify_consumer)
-      notify_consumer = true;
+      auto current_addr = peer_binaries.first(peer4_unit_length);
+      std::memcpy(new_endpoint.n_addr.data(), current_addr.data(), peer4_addr_length);
+      std::memcpy(&new_endpoint.n_port, current_addr.data() + peer4_addr_length, port_length);
+
+      peer_binaries = peer_binaries.subspan(peer4_unit_length);
+
+      //std::cout << Hasher::hex_stringify_hash(std::as_bytes(current_addr)) << " bytes retrieved from tracker ";
+
+      // This enqueue is lossy. if cons½umers queue is full the current address being enqueued is lost if peer_binaries
+      // is not empty and the the queue has been drained somewhat the current address will successfully push
+
+      if ( manager.discoveries.queue.push(new_endpoint) && !notify_consumer)
+        notify_consumer = true;
+    }
+  }
+
+  else if (parse["peers"].type() == bencode_type::list) {
+
+    auto& peer_list = parse["peers"].get_as<bendecoded::list>();
+
+    for (auto& peer : peer_list) {
+
+      auto& peer_map = peer.get_as<bendecoded::dictionary>();
+
+      peer_contact new_endpoint;
+
+      if ( auto found_value = find( "peer id", peer_map ) ) {
+
+        std::string& peer_id = found_value->get_as<bendecoded::string>();
+        if (peer_id.size() == 20) {
+          new_endpoint.peer_id.emplace();
+          std::memcpy(new_endpoint.peer_id.value().data(), peer_id.data(), 20);
+        }
+
+      }
+
+      if ( auto found_value = find( "ip", peer_map )) {
+
+        std::string& peer_addr = found_value->get_as<bendecoded::string>();
+        if (inet_pton(AF_INET, peer_addr.c_str(), &new_endpoint.n_addr) == 1) {
+          new_endpoint.is_v6 = false;
+        } else if (inet_pton(AF_INET6, peer_addr.c_str(), &new_endpoint.n_addr) == 1) {
+          new_endpoint.is_v6 = true;
+        } else
+          continue; // I choose not to allow my implementation perform dns resolves for dns name responses
+
+      } else continue;
+
+      if ( auto found_value = find( "port", peer_map) ) {
+
+        std::int64_t& peer_port = found_value->get_as<bendecoded::integer>();
+
+        if (peer_port < 1 || peer_port > max_port) continue;
+
+        new_endpoint.n_port = htons(static_cast<std::uint16_t>(peer_port));
+
+      } else continue;
+
+      // This enqueue is lossy. if cons½umers queue is full the current address being enqueued is lost if peer_binaries
+      // is not empty and the the queue has been drained somewhat the current address will successfully push
+
+      if ( manager.discoveries.queue.push(new_endpoint) && !notify_consumer)
+        notify_consumer = true;
+    }
 
   }
 
@@ -132,22 +199,21 @@ void TrackerManager::Tracker::do_on_success() {
   std::unique_ptr<Bendata> parse;
 
   try  {
-    std::cout << user_space.data << '\n';
+
     std::istringstream bencode(user_space.data);
-    parse = std::make_unique<Bendata>(bendecode_from_file(bencode));
-    parse->get_data<ben::dic>(); // validation check.
+    parse = std::make_unique<Bendata>(bendecode(bencode));
+    parse->get_as<bendecoded::dictionary>(); // validation check.
 
   } catch (std::exception& e) {
 
     // tracker responded with rubbish bencode
     manager.tracker_connections.erase(announce_url.domain_name);
-    std::cout << "parsed_nonsense\n";
     // log here.
     return;
 
   }
 
-  ben::dic& parsed_dict = parse->get_data<ben::dic>();
+  bendecoded::dictionary& parsed_dict = parse->get_as<bendecoded::dictionary>();
 
   if (parsed_dict.contains("failure reason"))  {
     // log here.

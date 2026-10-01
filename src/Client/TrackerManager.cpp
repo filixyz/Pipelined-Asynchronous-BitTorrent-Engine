@@ -113,7 +113,7 @@ void TrackerManager::initialize_state_system() {
   event.signal.start();
 }
 
-TrackerManager::TrackerManager(TorrentFile& torrent_, int port, beamable_spsc_t<ipv4_peer_address, 100>& consumer_)
+TrackerManager::TrackerManager(TorrentFile& torrent_, int port, beamable_spsc_t<peer_contact, 100>& consumer_)
   : event(initialize_libev()) ,protocol(event.loop), tracker_context(), discoveries(consumer_) {
   initialize_info_hash_byte(torrent_);
   initialize_tracker_context(torrent_);

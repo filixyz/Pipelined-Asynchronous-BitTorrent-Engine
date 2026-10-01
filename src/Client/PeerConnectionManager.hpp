@@ -42,9 +42,9 @@ struct peer_failure_update {
   std::size_t cached_generation;
 };
 
-struct pdiscovery_queue_ipv4_t {
-  beamable_spsc_t<ipv4_peer_address, 100> beamable_spsc;
-  overwritable_cache<ipv4_peer_address, 200> cache;
+struct peer_discoveries_queue_t {
+  beamable_spsc_t<peer_contact, 100> beamable_spsc;
+  overwritable_cache<peer_contact, 200> cache;
 };
 
 constexpr static double tick_duration = 1.0;
@@ -94,7 +94,6 @@ private:
   bool disconnected_peer_scheduler();
   bool failed_peer_scheduler();
 
-  void plus_mask_current(std::size_t spot);
   void round_robin_establisher_scheduler();
   bool initiate_connect(PeerConnection&);
 
@@ -108,6 +107,7 @@ struct outbound_server_t {
   ev::io watcher;
 };
 
+using peer_retry_queue_t = std::queue<peer_failure_update>;
 
 class PeerConnectionManager { friend class inbound_scheduler_t;
 
@@ -115,19 +115,18 @@ class PeerConnectionManager { friend class inbound_scheduler_t;
 
   connection_statistics_t statistics;
   connection_pool_t connection_pool;
-  peer_register_t<ipv4_peer_address> ipv4_peers{};
-  peer_register_t<ipv6_peer_address> ipv6_peers{};
+  peer_register_t<peer_contact> peers;
 
   outbound_server_t outbound_connection_server;
 
-  pdisconnection_queue disconnects;
-  pdiscovery_queue_ipv4_t discoveries;
-  std::queue<peer_failure_update> retry_queue;
+  peer_disconnects_queue_t disconnects;
+  peer_discoveries_queue_t discoveries;
+  peer_retry_queue_t retry_queue;
   inbound_scheduler_t inbound_connection_scheduler;
 
   const TorrentFile& torrent;
   const handshake_t handshake;
-  pconnection_queue& connects;
+  peer_connects_queue_t& connects;
 
   void ipv6_default_server_sockstore();
   void ipv4_default_server_sockstore();
@@ -166,10 +165,10 @@ class PeerConnectionManager { friend class inbound_scheduler_t;
   void notify_disconnected();
 
 public:
-  PeerConnectionManager(TorrentFile&, pconnection_queue&);
+  PeerConnectionManager(TorrentFile&, peer_connects_queue_t&);
 
   int get_listening_port();
-  beamable_spsc_t<ipv4_peer_address, 100>& get_ipv4_consumer();
+  beamable_spsc_t<peer_contact, 100>& get_peer_contacts_consumer();
   void start_manager();
 
 };

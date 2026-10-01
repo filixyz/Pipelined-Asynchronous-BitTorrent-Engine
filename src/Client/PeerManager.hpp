@@ -6,14 +6,14 @@
 
 class PeerManager {
 
-  pconnection_queue bittorrent_connects;
+  peer_connects_queue_t bittorrent_connects;
   PeerConnectionManager connection_manager;
 
 public:
   PeerManager(TorrentFile& torrent) : connection_manager(torrent, bittorrent_connects) {}
 
-  inline beamable_spsc_t<ipv4_peer_address, 100>& get_ipv4_consumer() {
-    return connection_manager.get_ipv4_consumer();
+  inline beamable_spsc_t<peer_contact, 100>& get_peer_contacts_consumer() {
+    return connection_manager.get_peer_contacts_consumer();
   }
 
   inline int get_listening_port() {

@@ -15,7 +15,7 @@ bool noexcept_stoi(std::string str, std::int64_t &result) {
   return true;
 }
 
-bool bendecode_string(std::istream &of, Bendata &data) {
+bool Bendata::decode_string(std::istream &of, Bendata &data) {
   char c;
   std::string size;
   while (of >> c && c != ':')
@@ -23,7 +23,7 @@ bool bendecode_string(std::istream &of, Bendata &data) {
   std::int64_t size_int;
   if (!noexcept_stoi(size, size_int))
     return false;
-  ben::str result;
+  bendecoded::string result;
   while (size_int-- > 0) {
     of >> c;
     result += c;
@@ -42,11 +42,11 @@ inline char read_delimeter(std::istream &of) {
   return c;
 }
 
-bool bendecode_integer(std::istream &of, Bendata &data) {
+bool Bendata::decode_integer(std::istream &of, Bendata &data) {
   read_delimeter(of);
   std::string number_str;
   char c;
-  while (of >> c && c != BEN_DELIMETER)
+  while (of >> c && c != bencode_delimeter)
     number_str += c;
   std::int64_t value;
   if (!noexcept_stoi(number_str, value))
@@ -68,37 +68,33 @@ auto peek_skipws(std::istream &of) {
 }
 
 bool get_bendata_from_stream(std::istream &of, Bendata &data) {
+
   switch (peek_skipws(of)) {
-  case BEN_NUM_T:
-    if (!bendecode_integer(of, data))
-      return error_with_reason("bendecode_integer failed");
-    break;
-  case BEN_DIC_T:
-    if (!bendecode_dictionary(of, data))
-      return error_with_reason("bendecode_dictionary failed");
-    break;
-  case BEN_LIS_T:
-    if (!bendecode_list(of, data))
-      return error_with_reason("bendecode_list failed");
-    break;
+
+  case bencode_type::integer:
+    if (!Bendata::decode_integer(of, data))     return error_with_reason("bendecode_integer failed");     break;
+  case bencode_type::dictionary:
+    if (!Bendata::decode_dictionary(of, data))  return error_with_reason("bendecode_dictionary failed");  break;
+  case bencode_type::list:
+    if (!Bendata::decode_list(of, data))        return error_with_reason("bendecode_list failed");        break;
   default:
-    if (!bendecode_string(of, data))
-      return error_with_reason("bendecode_string failed");
-    break;
+    if (!Bendata::decode_string(of, data))      return error_with_reason("bendecode_string failed");      break;
+
   }
   return true;
+
 }
 
-bool bendecode_list(std::istream &of, Bendata &data) {
-  Bendata new_list{Bendata_init_flag::list};
-  ben::lis &ref_list = new_list.get_data<ben::lis>();
+bool Bendata::decode_list(std::istream &of, Bendata &data) {
+  Bendata new_list {bencode_type::list};
+  bendecoded::list &ref_list = new_list.get_as<bendecoded::list>();
   new_list.bencode += read_delimeter(of);
-  while (peek_skipws(of) != BEN_DELIMETER) {
+  while (peek_skipws(of) != bencode_delimeter) {
     Bendata new_data{};
     if (!get_bendata_from_stream(of, new_data))
       return false;
-    ref_list.push_back(new_data);
     new_list.bencode += new_data.bencode;
+    ref_list.push_back(std::move(new_data));
   }
   new_list.bencode += read_delimeter(of);
   data = std::move(new_list);
@@ -106,31 +102,31 @@ bool bendecode_list(std::istream &of, Bendata &data) {
 }
 
 bool get_benkey_from_stream(std::istream &of, Bendata &key) {
-  if (!bendecode_string(of, key))
+  if (!Bendata::decode_string(of, key))
     return error_with_reason("get_benkey failed: string");
   return true;
 }
 
-bool bendecode_dictionary(std::istream &of, Bendata &data) {
-  Bendata new_dict{Bendata_init_flag::dictionary};
-  ben::dic &ref_dic = new_dict.get_data<ben::dic>();
+bool Bendata::decode_dictionary(std::istream &of, Bendata &data) {
+  Bendata new_dict {bencode_type::dictionary};
+  bendecoded::dictionary &ref_dic = new_dict.get_as<bendecoded::dictionary>();
   new_dict.bencode += read_delimeter(of);
-  while (peek_skipws(of) != BEN_DELIMETER) {
+  while (peek_skipws(of) != bencode_delimeter) {
     Bendata new_key{};
     Bendata new_data{};
     if (!get_benkey_from_stream(of, new_key))
       return false;
     if (!get_bendata_from_stream(of, new_data))
       return false;
-    ref_dic[new_key.get_data<std::string>()] = new_data;
-    new_dict.bencode += new_key.bencode + new_data.bencode;
+    new_dict.bencode += new_key.bencode + new_data.bencode;  // if error check here.
+    ref_dic[new_key.get_as<bendecoded::string>()] = std::move(new_data);
   }
   new_dict.bencode += read_delimeter(of);
   data = std::move(new_dict);
   return true;
 }
 
-Bendata bendecode_from_file(std::istream &file) {
+Bendata bendecode(std::istream &file) {
   file >> std::noskipws;
   Bendata parsed;
   if (!get_bendata_from_stream(file, parsed)) throw Invalid_Bencode_File{};

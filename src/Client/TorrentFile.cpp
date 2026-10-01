@@ -12,10 +12,10 @@ TorrentFile::TorrentFile(const std::filesystem::path pathname) {
   if (!torrent_file)
     throw Torrent_File_Not_Found{};
   try {
-    Bendata parsed_bendata(bendecode_from_file(torrent_file));
-    transcibe = std::move(parsed_bendata.get_data<ben::dic>());
+    Bendata parsed_bendata(bendecode(torrent_file));
+    transcibe = std::move(parsed_bendata.get_as<bendecoded::dictionary>());
     check_validity_of_transcribe();
-    info_hash = &(transcibe.find("info")->second.get_data<ben::dic>());
+    info_hash = &(transcibe.find("info")->second.get_as<bendecoded::dictionary>());
   } catch (...) {
     throw Invalid_Torrent_File{};
   }
@@ -31,11 +31,11 @@ void TorrentFile::initialize_info_hash_bytes() {
 
 void TorrentFile::compute_download_size() {
   if ( torrent_is_file() )
-    file_size = info_hash->find("length")->second.get_data<ben::num>();
+    file_size = info_hash->find("length")->second.get_as<bendecoded::integer>();
   else {
-    auto& files = info_hash->find("files")->second.get_data<ben::lis>();
+    auto& files = info_hash->find("files")->second.get_as<bendecoded::list>();
     for (auto& file : files) {
-      file_size += file.get_data<ben::dic>().find("length")->second.get_data<ben::num>();
+      file_size += file.get_as<bendecoded::dictionary>().find("length")->second.get_as<bendecoded::integer>();
     }
   }
 }
@@ -46,12 +46,12 @@ void TorrentFile::check_validity_of_transcribe() const {
 
 std::vector<std::string_view> TorrentFile::get_tracker_urls() const {
   std::vector<std::string_view> trackers;
-  trackers.push_back( transcibe.find("announce")->second.get_data<std::string>() );
+  trackers.push_back( transcibe.find("announce")->second.get_as<bendecoded::string>() );
   if ( transcibe.contains("announce-list") ) {
-    const std::vector<Bendata>& announce_list = transcibe.find("announce-list")->second.get_data<ben::lis>();
+    const std::vector<Bendata>& announce_list = transcibe.find("announce-list")->second.get_as<bendecoded::list>();
     for (const Bendata& bencoded_url : announce_list)
-      for (const Bendata& list : bencoded_url.get_data<ben::lis>())
-        trackers.push_back(list.get_data<ben::str>());
+      for (const Bendata& list : bencoded_url.get_as<bendecoded::list>())
+        trackers.push_back(list.get_as<bendecoded::string>());
   }
   return trackers;
 }
@@ -60,15 +60,15 @@ std::string_view TorrentFile::get_info_key() const {
   return transcibe.find("info")->second.get_encode();
 }
 std::string_view TorrentFile::get_torrent_name() const {
-  return info_hash->find("name")->second.get_data<ben::str>();
+  return info_hash->find("name")->second.get_as<bendecoded::string>();
 }
 std::int64_t TorrentFile::get_piece_length() const {
-  return info_hash->find("piece length")->second.get_data<ben::num>();
+  return info_hash->find("piece length")->second.get_as<bendecoded::integer>();
 }
 
 std::string_view TorrentFile::get_piece_hash(int index) const {
   const std::string &pieces_hash =
-      info_hash->find("pieces")->second.get_data<ben::str>();
+      info_hash->find("pieces")->second.get_as<bendecoded::string>();
   int hash_index = index * HASH_STRING_LENGTH;
   return std::string_view(&pieces_hash[hash_index], HASH_STRING_LENGTH);
 }

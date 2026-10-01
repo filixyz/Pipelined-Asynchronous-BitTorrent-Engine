@@ -109,9 +109,6 @@ private:
 
 enum class pstate:  std::uint8_t  {null, DISCOVERED, HANDSHAKE, CONNECTED, DISCONNECTED, FAILED};
 enum class psource: std::uint8_t  {null, tracker, tcp_server};
-enum class pipv:    std::uint8_t  {null, ipv4, ipv6, ipv4maskedv6};
-using peer_id_t                =  std::array<std::byte, 20>;
-union peer_key_t                  { ipv4_peer_address ipv4; ipv6_peer_address ipv6; };
 union peer_sock_store_t           { sockaddr_in ipv4_store; sockaddr_in6 ipv6_store; };
 
 struct peer_stats_t{
@@ -130,7 +127,6 @@ struct tranport_frame_cursors {
   bittorrent_messages::frame_cursor incoming;
 };
 
-
 using hanshake_buffer   = io_ring_buffer<68>;
 using session_buffer    = io_ring_buffer< uint8_t(1)<<bprotocol::constants::tcp_bufexp >;
 using timer_clbk_t      = void (*) (ev::timer&, int);
@@ -144,16 +140,14 @@ struct PeerConnection {
   hanshake_buffer send_buffer{};
   peer_watchers listener;
 
-  peer_key_t key {};
-  peer_id_t peer_id {};
+  peer_contact contact;
   pstate state {pstate::null};
   psource source {psource::null};
-  pipv IPv {pipv::null};
   bittorrent_messages::frame_cursor outgoing_frame_cursor;
   peer_stats_t stats;
 
   template <sock_clbk_t socket_callback, timer_clbk_t timer_callback>
-  void initialize_connection (peer_key_t&, pipv, psource, pstate, ev::dynamic_loop&);
+  void initialize_connection (peer_contact&, psource, pstate, ev::dynamic_loop&);
   void teardown_connection();
 
   recv_transact recv_messages();
@@ -200,19 +194,22 @@ private:
   static PeerConnection  dummypeer;
 };
 
-using pconnection_queue = beamable_spsc_t<connect_update, 50>;
-using pdisconnection_queue = beamable_spsc_t<disconnect_update, 50>;
+using peer_connects_queue_t = beamable_spsc_t<connect_update, 50>;
+using peer_disconnects_queue_t = beamable_spsc_t<disconnect_update, 50>;
 
 struct peer_manager_hashers {
-  std::uint64_t operator()(const ipv4_peer_address& key) const noexcept {
-    return Hasher::fnv_1a_64bits(key.iport);
+
+  std::uint64_t operator()( const peer_contact& contact ) const noexcept {
+
+    std::array<std::byte, 19> peer_identifier;
+    std::size_t n = contact.is_v6 ? 16 : 4;
+    std::memcpy(peer_identifier.data(),   &contact.n_addr,  n);
+    std::memcpy(peer_identifier.data()+n, &contact.n_port,  2); n+=2;
+    std::memcpy(peer_identifier.data()+n, &contact.is_v6,   1); n+=1;
+    return Hasher::fnv_1a_64bits( std::span<const std::byte>(peer_identifier.data(), n) );
+
   }
-  std::uint64_t operator()(const ipv6_peer_address& key) const noexcept {
-    return Hasher::fnv_1a_64bits(key.iport);
-  }
-  std::uint64_t operator()(const peer_id_t& key) const noexcept {
-    return Hasher::fnv_1a_64bits(key);
-  }
+
 };
 
 struct peer_id_gen {

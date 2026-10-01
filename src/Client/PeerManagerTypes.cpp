@@ -33,16 +33,16 @@ bool peer_nonblock_tcp::open_socket(int __domain) {
   return true;
 }
 
-void sockaddr_in_printer(const sockaddr_in* store_ ) {
+void sockaddr_in_printer( const sockaddr_in* store_ ) {
+
   auto& store = *store_;
   std::span<const std::byte> addr ( reinterpret_cast<const std::byte*>(&store.sin_addr), sizeof(store.sin_addr) );
   std::span<const std::byte> port ( reinterpret_cast<const std::byte*>(&store.sin_port), sizeof(store.sin_port) );
   std::cout << "addr bytes: "  << Hasher::hex_stringify_hash(addr) << " port bytes: " << Hasher::hex_stringify_hash(port) << '\n';
+
 }
 
 pconnect_return_t peer_nonblock_tcp::pconnect( const sockaddr* addr,int address_family) {
-
-  sockaddr_in_printer((sockaddr_in*)addr);
 
   if (__socket == -1) {
     perrno = EBADF;
@@ -111,7 +111,7 @@ void peer_nonblock_tcp::close_socket() {
   std::memset(&ephemereal_hdr, 0, sizeof(ephemereal_hdr));
 }
 
-void peer_nonblock_tcp::disconnect(){
+void peer_nonblock_tcp::disconnect() {
   close_socket();
 }
 
@@ -133,7 +133,6 @@ int peer_nonblock_tcp::get_errno() {
 peer_nonblock_tcp::~peer_nonblock_tcp() noexcept {
   close_socket();
 }
-
 
 peer_nonblock_tcp::peer_nonblock_tcp(peer_nonblock_tcp&& other) noexcept {
  __socket = other.__socket;

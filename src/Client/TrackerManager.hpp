@@ -146,7 +146,7 @@ private:
   manager_context_t tracker_context;
   tracker_store_t tracker_connections;
   manager_space_t manager_space;
-  beamable_spsc_t<ipv4_peer_address, 100>& discoveries;
+  beamable_spsc_t<peer_contact, 100>& discoveries;
 
   void initialize_info_hash_byte(TorrentFile&);
   void initialize_tracker_context(TorrentFile&);
@@ -177,7 +177,7 @@ private:
   void feed_peer_manager();
 
 public:
-  TrackerManager(TorrentFile&, int port, beamable_spsc_t<ipv4_peer_address, 100>& );
+  TrackerManager(TorrentFile&, int port, beamable_spsc_t<peer_contact, 100>& );
   void start_tracker_manager();
   void start();
   void reannounce();
@@ -199,7 +199,7 @@ class TrackerManager::Tracker: public HTTPRequest {
   void do_on_success() override;
   void do_on_failure() override;
 
-  void active_state_handler(ben::dic& parsed);
+  void active_state_handler(bendecoded::dictionary& parsed);
   void inactive_state_handler();
 
   void send_to_protocol_space();
