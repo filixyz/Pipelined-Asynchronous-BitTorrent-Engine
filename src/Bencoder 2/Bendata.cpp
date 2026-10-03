@@ -2,45 +2,52 @@
 #include <cstdint>
 #include <variant>
 
-Bendata::Bendata(std::int64_t number) : actual_value{number}  {}
+namespace ben {
 
-Bendata::Bendata(std::string string) : actual_value{std::move(string)}   {}
+data::data(std::int64_t number) : actual_value{number}  {}
 
-Bendata::Bendata(bencode_type type) {
+data::data(std::string string) : actual_value{std::move(string)}   {}
+
+data::data(encode_type type) {
 
   switch (type) {
-  case bencode_type::integer:     actual_value.emplace<bendecoded::integer>();    break;
-  case bencode_type::string:      actual_value.emplace<bendecoded::string>();     break;
-  case bencode_type::list:        actual_value.emplace<bendecoded::list>();       break;
-  case bencode_type::dictionary:  actual_value.emplace<bendecoded::dictionary>(); break;
-  case bencode_type::nothing:     break;
+  case encode_type::integer:     actual_value.emplace<decoded_type::integer>();    break;
+  case encode_type::string:      actual_value.emplace<decoded_type::string>();     break;
+  case encode_type::list:        actual_value.emplace<decoded_type::list>();       break;
+  case encode_type::dictionary:  actual_value.emplace<decoded_type::dictionary>(); break;
+  case encode_type::nothing:     break;
   }
 
 }
 
-bencode_type Bendata::type() const {
+encode_type data::type() const {
 
-  if (actual_value.index() == 0)  return bencode_type::integer;
-  if (actual_value.index() == 1)  return bencode_type::string;
-  if (actual_value.index() == 2)  return bencode_type::list;
-  if (actual_value.index() == 3)  return bencode_type::dictionary;
+  if (actual_value.index() == 0)  return encode_type::integer;
+  if (actual_value.index() == 1)  return encode_type::string;
+  if (actual_value.index() == 2)  return encode_type::list;
+  if (actual_value.index() == 3)  return encode_type::dictionary;
 
-  return bencode_type::nothing;
+  return encode_type::nothing;
+
 }
 
-std::ostream &operator<<(std::ostream &os, const Bendata &ben_object) {
+std::ostream &operator<<(std::ostream &os, const data &ben_object) {
+
   switch (ben_object.type()) {
-  case bencode_type::string: {
+
+  case encode_type::string: {
     os << '\"' << std::get<std::string>(ben_object.actual_value) << '\"';
     break;
   }
-  case bencode_type::integer: {
+
+  case encode_type::integer: {
     os << std::get<std::int64_t>(ben_object.actual_value);
     break;
   }
-  case bencode_type::list: {
-    const std::vector<Bendata> &list =
-        ben_object.get_as<bendecoded::list>();
+
+  case encode_type::list: {
+    const std::vector<data> &list =
+        ben_object.get_as<decoded_type::list>();
     os << '[';
     for (size_t i = 0; i < list.size(); ++i) {
       if (i == list.size() - 1)
@@ -51,9 +58,10 @@ std::ostream &operator<<(std::ostream &os, const Bendata &ben_object) {
     os << ']';
     break;
   }
-  case bencode_type::dictionary: {
-    const std::map<std::string, Bendata> &dicts =
-        ben_object.get_as<bendecoded::dictionary>();
+
+  case encode_type::dictionary: {
+    const std::map<std::string, data> &dicts =
+        ben_object.get_as<decoded_type::dictionary>();
     std::size_t d_size = dicts.size(), index = 0;
     os << '{';
     for (const auto &x : dicts) {
@@ -65,8 +73,11 @@ std::ostream &operator<<(std::ostream &os, const Bendata &ben_object) {
     }
     os << '}';
   }
-  case bencode_type::nothing:
-    return os;
+
+  case encode_type::nothing:  return os; break;
+
   }
   return os;
+}
+
 }

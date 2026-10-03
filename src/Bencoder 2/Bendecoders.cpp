@@ -1,33 +1,33 @@
 #include "Bencode.hpp"
-#include <cctype>
 #include <charconv>
-#include <cstdint>
-#include <cwctype>
-#include <optional>
-#include <string>
-#include <string_view>
 #include <system_error>
 
-std::optional<std::int64_t> get_number_if_valid(std::string_view str) {
+namespace ben  {
 
-  if (str.empty()) return std::nullopt;
+namespace {
 
-  constexpr int base = 10;
+  std::optional<std::int64_t> get_number_if_valid(std::string_view str) {
 
-  if (str.front() == '0' and str.size() != 1) // handle trailing zeros
+    if (str.empty()) return std::nullopt;
+
+    constexpr int base = 10;
+
+    if (str.front() == '0' and str.size() != 1) // handle trailing zeros
+      return std::nullopt;
+
+    if (str.size() >= 2 and str.starts_with("-0"))
+      return std::nullopt;
+
+    std::int64_t decode{};
+    auto valid_end = str.data() + str.size();
+    auto [ptr, err] = std::from_chars(str.data(), valid_end, decode, base);
+
+    if (err == std::errc() && ptr == valid_end)
+      return decode;
+
     return std::nullopt;
 
-  if (str.size() >= 2 and str.starts_with("-0"))
-    return std::nullopt;
-
-  std::int64_t decode{};
-  auto valid_end = str.data() + str.size();
-  auto [ptr, err] = std::from_chars(str.data(), valid_end, decode, base);
-
-  if (err == std::errc() && ptr == valid_end)
-    return decode;
-
-  return std::nullopt;
+  }
 
 }
 
@@ -60,13 +60,13 @@ decode_t decoders::string(source_t& encode) {
 
   std::string_view actual_string = view.substr(string_begin, declared_size.value());
 
-  bendecoded::string result {actual_string};
+  decoded_type::string result {actual_string};
 
   encode.cursor += string_begin + declared_size.value();
 
-  decode.result = std::move(result);
-  decode.result.value().position_in_source.start = encode_begin;
-  decode.result.value().position_in_source.size = encode.cursor - encode_begin;
+  decode = std::move(result);
+  decode.value().position_in_source.start = encode_begin;
+  decode.value().position_in_source.size = encode.cursor - encode_begin;
 
   return decode;
 
@@ -81,7 +81,7 @@ decode_t decoders::integer(source_t& encoded) {
 
   std::size_t encode_begin = encoded.cursor++;
 
-  auto end_index = encoded.undecoded().find_first_of(bencode_delimeter);
+  auto end_index = encoded.undecoded().find_first_of(delimeter);
 
   if (end_index == encoded.undecoded().npos)
     return decode;
@@ -97,9 +97,9 @@ decode_t decoders::integer(source_t& encoded) {
 
   encoded.cursor += end_index + 1;
 
-  decode.result = decode_number.value();
-  decode.result.value().position_in_source.start  = encode_begin;
-  decode.result.value().position_in_source.size   = encoded.cursor - encode_begin;
+  decode = decode_number.value();
+  decode.value().position_in_source.start  = encode_begin;
+  decode.value().position_in_source.size   = encoded.cursor - encode_begin;
 
   return decode;
 
@@ -117,22 +117,22 @@ decode_t decoders::any(source_t& encoded) {
 
   if (header_type == header::integer) {
     decode = decoders::integer(encoded);
-    if (!decode.result)
+    if (!decode)
       std::cerr << "integer decode failed\n";
   }
   else if ( header_type == header::list) {
     decode = decoders::list(encoded);
-    if (!decode.result)
+    if (!decode)
       std::cerr << "list decode failed\n";
   }
   else if ( header_type == header::dictionary) {
     decode = decoders::dictionary(encoded);
-    if (!decode.result)
+    if (!decode)
       std::cerr << "dictionary decode failed\n";
   }
   else {
     decode = decoders::string(encoded);
-    if (!decode.result)
+    if (!decode)
       std::cerr << "string decode failed\n";
   }
 
@@ -150,40 +150,40 @@ decode_t decoders::list(source_t& encode) {
 
   if (encode.undecoded().empty()) return decode;
 
-  decode.result.emplace(bencode_type::list);
+  decode.emplace(encode_type::list);
 
-  bendecoded::list& list =
-    decode.result.value().get_as<bendecoded::list>();
+  decoded_type::list& list =
+    decode.value().get_as<decoded_type::list>();
 
-  while ( !encode.undecoded().empty() && encode.undecoded().front() != bencode_delimeter ) {
+  while ( !encode.undecoded().empty() && encode.undecoded().front() != delimeter ) {
 
     auto bendecoded = decoders::any(encode);
 
-    if (!bendecoded.result) {
-      decode.result.reset();
+    if (!bendecoded) {
+      decode.reset();
       break;
     }
 
-    list.push_back(std::move(bendecoded.result.value()));
+    list.push_back(std::move(bendecoded.value()));
 
   }
 
-  if (!decode.result) /* decoded something wrong */ return decode;
+  if (!decode) /* decoded something wrong */ return decode;
 
   if ( encode.undecoded().empty()) {
-    decode.result.reset();
+    decode.reset();
     return decode;
   }
 
-  if ( encode.undecoded().front() != bencode_delimeter ) {
-    decode.result.reset();
+  if ( encode.undecoded().front() != delimeter ) {
+    decode.reset();
     return decode;
   }
 
   encode.cursor+=1;
 
-  decode.result.value().position_in_source.start = encode_begin;
-  decode.result.value().position_in_source.size = encode.cursor - encode_begin;
+  decode.value().position_in_source.start = encode_begin;
+  decode.value().position_in_source.size = encode.cursor - encode_begin;
 
   return decode;
 
@@ -200,54 +200,56 @@ decode_t decoders::dictionary(source_t& encode) {
 
   if (encode.undecoded().empty()) return decode;
 
-  decode.result.emplace(bencode_type::dictionary);
+  decode.emplace(encode_type::dictionary);
 
-  bendecoded::dictionary& dictionary=
-    decode.result.value().get_as<bendecoded::dictionary>();
+  decoded_type::dictionary& dictionary=
+    decode.value().get_as<decoded_type::dictionary>();
 
-  while ( !encode.undecoded().empty() && encode.undecoded().front() != bencode_delimeter ) {
+  while ( !encode.undecoded().empty() && encode.undecoded().front() != delimeter ) {
 
     auto bendecoded_key = decoders::string(encode);
-    if (!bendecoded_key.result) {
-      decode.result.reset();
+    if (!bendecoded_key) {
+      decode.reset();
       break;
     }
 
     auto bendecoded_val = decoders::any(encode);
-    if (!bendecoded_val.result) {
-      decode.result.reset();
+    if (!bendecoded_val) {
+      decode.reset();
       break;
     }
 
-    auto key = std::move( bendecoded_key.result.value().get_as<bendecoded::string>() );
-    auto val = std::move( bendecoded_val.result.value() );
+    auto key = std::move( bendecoded_key.value().get_as<decoded_type::string>() );
+    auto val = std::move( bendecoded_val.value() );
 
     auto [it, unique] = dictionary.try_emplace(std::move(key), std::move(val));
 
     if (!unique) {
-      decode.result.reset();
+      decode.reset();
       break;
     }
 
   }
 
-  if (!decode.result) /* decoded trash somewhere */ return decode;
+  if (!decode) /* decoded trash somewhere */ return decode;
 
   if ( encode.undecoded().empty()) {
-    decode.result.reset();
+    decode.reset();
     return decode;
   }
 
-  if ( encode.undecoded().front() != bencode_delimeter ) {
-    decode.result.reset();
+  if ( encode.undecoded().front() != delimeter ) {
+    decode.reset();
     return decode;
   }
 
   encode.cursor+=1;
 
-  decode.result.value().position_in_source.start = encode_begin;
-  decode.result.value().position_in_source.size = encode.cursor - encode_begin;
+  decode.value().position_in_source.start = encode_begin;
+  decode.value().position_in_source.size = encode.cursor - encode_begin;
 
   return decode;
+
+}
 
 }

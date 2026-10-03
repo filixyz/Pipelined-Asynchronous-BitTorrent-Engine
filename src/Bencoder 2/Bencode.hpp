@@ -1,25 +1,6 @@
 #ifndef BENCODE
 #define BENCODE
 
-// Bencode will be the library that provides facilities to interact
-// with/represent Bee-data From a metainfo File to actual objects we can
-// manipulate in code
-//
-// Classes:
-//    Bendata -> An abstraction fo an actual bee-data instance
-//               can be of underlying type integer, string, dictionary or list,
-//               Each instance corresponds to a single constant underlying type,
-//               E.G: once an integer alway an inetger.
-// Functions:
-//    Bendecode_integer -> overload 2
-//        1) One for reading data directly from some file stream and converting
-//        it to bee-data 2) One for converting some string to its appropriat
-//        bee-data represenation
-//    Bendecode_string -> overload 2 (same motive as previous function but for
-//    strings) Bendecode_dictionary -> overload 2 (same motive as previous
-//    function but for dictionaries) Bendecode_list -> overload 2 (same motive
-//    as previous function but for lists)
-
 #include <cstdint>
 #include <iostream>
 #include <map>
@@ -29,13 +10,15 @@
 #include <variant>
 #include <vector>
 
+namespace ben {
+
 enum header: char {
   integer     = 'i',
   list        = 'l',
   dictionary  = 'd',
 };
 
-enum class bencode_type {
+enum class encode_type {
   integer     = 0,
   string      = 1,
   list        = 2,
@@ -43,20 +26,20 @@ enum class bencode_type {
   nothing     = 4,
 };
 
-constexpr char bencode_delimeter = 'e';
+constexpr char delimeter = 'e';
 
 struct BenDictPair {
   std::string key;
   std::string bencoded_value;
 };
 
-class Bendata;
+class data;
 
-namespace bendecoded {
+namespace decoded_type {
   using integer     = typename std::int64_t;
   using string      = typename std::string;
-  using list        = typename std::vector<Bendata>;
-  using dictionary  = typename std::map<std::string, Bendata>;
+  using list        = typename std::vector<data>;
+  using dictionary  = typename std::map<std::string, data>;
 }
 
 struct source_t {
@@ -75,23 +58,24 @@ struct source_stats_t {
   std::size_t size  {0};
 };
 
-class Bendata {
+class data {
 
   std::variant <
-    bendecoded::integer,
-    bendecoded::string,
-    bendecoded::list,
-    bendecoded::dictionary
+    decoded_type::integer,
+    decoded_type::string,
+    decoded_type::list,
+    decoded_type::dictionary
   > actual_value;
 
-  source_stats_t position_in_source{};
 
 public:
 
-  Bendata() = default;
-  Bendata(std::int64_t number);
-  Bendata(std::string string);
-  explicit Bendata(bencode_type type);
+  source_stats_t position_in_source{};
+
+  data() = default;
+  data(std::int64_t number);
+  data(std::string string);
+  explicit data(encode_type type);
 
   template <typename T> T &get_as() {
     return std::get<T>(actual_value);
@@ -101,17 +85,14 @@ public:
     return std::get<T>(actual_value);
   }
 
-  bencode_type type() const;
+  encode_type type() const;
 
   friend struct decoders;
-  friend std::ostream &operator<<(std::ostream &os, const Bendata &ben_object);
+  friend std::ostream &operator<<(std::ostream &os, const data &ben_object);
 
 };
 
-
-struct decode_t {
-  std::optional<Bendata> result;
-};
+using decode_t = std::optional<data>;
 
 struct decoders {
   static decode_t integer(source_t&);
@@ -129,9 +110,13 @@ struct encoders {
 };
 
 // map containers lookup helper
-template<class M> auto* find(const typename M::key_type& key, M& map ) {
+inline auto* find(const decoded_type::dictionary::key_type& key, decoded_type::dictionary& map ) {
   auto it = map.find(key);
   return it == map.end() ? nullptr : &it->second;
 }
+
+}
+
+
 
 #endif

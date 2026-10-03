@@ -3,6 +3,8 @@
 #include <string>
 #include <algorithm>
 
+namespace ben {
+
 std::string encoders::integer(std::int64_t value){
   return std::string{'i'} + std::to_string(value) + 'e';
 }
@@ -30,5 +32,7 @@ std::string encoders::dictionary(std::vector<BenDictPair> items) {
   encoded_result += "e";
 
   return encoded_result;
+
+}
 
 }
