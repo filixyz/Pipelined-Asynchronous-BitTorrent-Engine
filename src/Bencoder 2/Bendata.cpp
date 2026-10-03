@@ -1,25 +1,35 @@
 #include "Bencode.hpp"
 #include <cstdint>
+#include <variant>
 
 Bendata::Bendata(std::int64_t number) : actual_value{number}  {}
 
-Bendata::Bendata(std::string string) : actual_value{string}   {}
+Bendata::Bendata(std::string string) : actual_value{std::move(string)}   {}
 
 Bendata::Bendata(bencode_type type) {
 
   switch (type) {
   case bencode_type::integer:     actual_value.emplace<bendecoded::integer>();    break;
   case bencode_type::string:      actual_value.emplace<bendecoded::string>();     break;
-  case bencode_type::dictionary:  actual_value.emplace<bendecoded::dictionary>(); break;
   case bencode_type::list:        actual_value.emplace<bendecoded::list>();       break;
+  case bencode_type::dictionary:  actual_value.emplace<bendecoded::dictionary>(); break;
+  case bencode_type::nothing:     break;
   }
 
 }
 
-bencode_type Bendata::type() const { return _t; }
+bencode_type Bendata::type() const {
+
+  if (actual_value.index() == 0)  return bencode_type::integer;
+  if (actual_value.index() == 1)  return bencode_type::string;
+  if (actual_value.index() == 2)  return bencode_type::list;
+  if (actual_value.index() == 3)  return bencode_type::dictionary;
+
+  return bencode_type::nothing;
+}
 
 std::ostream &operator<<(std::ostream &os, const Bendata &ben_object) {
-  switch (ben_object._t) {
+  switch (ben_object.type()) {
   case bencode_type::string: {
     os << '\"' << std::get<std::string>(ben_object.actual_value) << '\"';
     break;
@@ -55,6 +65,8 @@ std::ostream &operator<<(std::ostream &os, const Bendata &ben_object) {
     }
     os << '}';
   }
+  case bencode_type::nothing:
+    return os;
   }
   return os;
 }

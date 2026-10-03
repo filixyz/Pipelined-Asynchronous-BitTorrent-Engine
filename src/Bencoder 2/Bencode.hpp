@@ -29,11 +29,18 @@
 #include <variant>
 #include <vector>
 
-enum bencode_type: char {
-  string      = 's',
+enum header: char {
   integer     = 'i',
   list        = 'l',
   dictionary  = 'd',
+};
+
+enum class bencode_type {
+  integer     = 0,
+  string      = 1,
+  list        = 2,
+  dictionary  = 3,
+  nothing     = 4,
 };
 
 constexpr char bencode_delimeter = 'e';
@@ -52,7 +59,6 @@ namespace bendecoded {
   using dictionary  = typename std::map<std::string, Bendata>;
 }
 
-
 struct source_t {
 
   std::string_view source;
@@ -62,25 +68,23 @@ struct source_t {
     return source.substr(cursor);
   }
 
-  std::string_view::const_reference undecoded_header() {
-    return undecoded().front();
-  }
-
-
 };
 
 struct source_stats_t {
-  std::size_t start;
-  std::size_t size;
+  std::size_t start {0};
+  std::size_t size  {0};
 };
 
 class Bendata {
 
   std::variant <
-    std::int64_t, std::string, std::vector<Bendata>, std::map<std::string, Bendata>
+    bendecoded::integer,
+    bendecoded::string,
+    bendecoded::list,
+    bendecoded::dictionary
   > actual_value;
 
-  source_stats_t position_in_source;
+  source_stats_t position_in_source{};
 
 public:
 
@@ -100,14 +104,13 @@ public:
   bencode_type type() const;
 
   friend struct decoders;
-
   friend std::ostream &operator<<(std::ostream &os, const Bendata &ben_object);
+
 };
 
 
 struct decode_t {
   std::optional<Bendata> result;
-  std::size_t length{0};
 };
 
 struct decoders {
