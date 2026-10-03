@@ -107,7 +107,7 @@ private:
   friend PeerConnectionManager;
 };
 
-enum class pstate:  std::uint8_t  {null, DISCOVERED, HANDSHAKE, CONNECTED, DISCONNECTED, FAILED};
+enum class pstate:  std::uint8_t  {null, TRANSPORT, HANDSHAKE, CONNECTED, DISCONNECTED, FAILED};
 enum class psource: std::uint8_t  {null, tracker, tcp_server};
 union peer_sock_store_t           { sockaddr_in ipv4_store; sockaddr_in6 ipv6_store; };
 

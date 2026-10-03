@@ -8,19 +8,32 @@
 constexpr int HASH_STRING_LENGTH = 20;
 
 TorrentFile::TorrentFile(const std::filesystem::path pathname) {
+
   std::ifstream torrent_file{pathname};
   if (!torrent_file)
     throw Torrent_File_Not_Found{};
-  try {
-    Bendata parsed_bendata(bendecode(torrent_file));
-    transcibe = std::move(parsed_bendata.get_as<bendecoded::dictionary>());
-    check_validity_of_transcribe();
-    info_hash = &(transcibe.find("info")->second.get_as<bendecoded::dictionary>());
-  } catch (...) {
-    throw Invalid_Torrent_File{};
+
+  auto parse = bendecode(torrent_file);
+
+  if (!parse) throw Invalid_Torrent_File{};
+
+  Bendata& parsed_metainfo = parse.value();
+
+  if (parsed_metainfo.type() != bencode_type::dictionary) throw Invalid_Torrent_File{};
+
+  transcibe = std::move(parsed_metainfo.get_as<bendecoded::dictionary>());
+
+  if ( auto found_value = find("info", transcibe) ) {
+    auto& info_map = * found_value;
+    info_hash = &(info_map.get_as<bendecoded::dictionary>());
   }
+  else throw Invalid_Torrent_File{};
+
+  if (!is_valid_metainfo()) throw Invalid_Torrent_File {};
+
   compute_download_size();
   initialize_info_hash_bytes();
+
 }
 
 void TorrentFile::initialize_info_hash_bytes() {
@@ -40,8 +53,9 @@ void TorrentFile::compute_download_size() {
   }
 }
 
-void TorrentFile::check_validity_of_transcribe() const {
+bool TorrentFile::is_valid_metainfo() const {
   // implement later
+  return true;
 }
 
 std::vector<std::string_view> TorrentFile::get_tracker_urls() const {

@@ -146,8 +146,9 @@ bool PeerConnectionManager::connect(PeerConnection& peer) {
 
   sockaddr* sock_addr = reinterpret_cast<sockaddr*>(&peer.store);
 
-  if ( peer.tcp.open_socket(sock_addr->sa_family) == false )
+  if ( peer.tcp.open_socket(sock_addr->sa_family) == false ) {
     return false;
+  }
 
   pconnect_return_t resolve = peer.tcp.pconnect(sock_addr, sock_addr->sa_family);
 
@@ -159,7 +160,6 @@ bool PeerConnectionManager::connect(PeerConnection& peer) {
   arm_connection_watchers(peer, EV_WRITE);
 
   if ( resolve == connected ) {
-    peer.stats             .reset();
     peer.state =            pstate::HANDSHAKE;
     peer.listener.for_sock .feed_event(EV_WRITE);
   }
@@ -212,7 +212,7 @@ bool inbound_scheduler_t::discovered_peer_scheduler() {
     auto& peer = acquired_slot->object;
     peer.initialize_connection
       <PeerConnectionManager::peer_socket_callback, PeerConnectionManager::peer_timer_callback> (
-        new_endpoint, psource::tracker, pstate::DISCOVERED, manager.event_loop
+        new_endpoint, psource::tracker, pstate::TRANSPORT, manager.event_loop
     );
     if ( initiate_connect(peer) == false ) {
       manager.delete_peer_connection(peer);
@@ -462,12 +462,13 @@ bool PeerConnectionManager::accept_peer_connection() {
 }
 
 void PeerConnectionManager::handle_peer_failure(PeerConnection& peer) {
+
   peer.state = pstate::FAILED;
   peer.stats.failures++;
+  peer.tcp.close_socket();
 
   assert(peer.source != psource::null);
 
-  peer.tcp.close_socket();
   if (peer.source == psource::tcp_server)
     statistics.single_outbound_resolved();
   else {
@@ -498,6 +499,7 @@ void PeerConnectionManager::peer_timer_callback(ev::timer& timer, int) {
 
   if (peer.state == pstate::FAILED) {
     manager.stop_connection_watchers(peer);
+    peer.state = pstate::TRANSPORT;
     peer_failure_update new_failure { peer_slot, peer_slot->generation() };
     manager.retry_queue.push(new_failure);
     manager.statistics.decrement_failed();
@@ -505,7 +507,7 @@ void PeerConnectionManager::peer_timer_callback(ev::timer& timer, int) {
     manager.inbound_connection_scheduler.send_notification();
     return;
   }
-  // should coalesce to this when in another state, DISCOVERED, HANDSHAKE and DISCONNECTED.
+  // should coalesce to this when in another state, TRANSPORT, HANDSHAKE and DISCONNECTED.
   manager.handle_peer_failure(peer);
 }
 
@@ -514,6 +516,17 @@ void PeerConnectionManager::delete_peer_connection(PeerConnection& peer) {
   deregister_from_map(peer);
   peer.teardown_connection();
   connection_pool.release(reinterpret_cast<connection_slot*>( &peer ));
+}
+
+void PeerConnectionManager::hard_delete_peer_connection(PeerConnection &peer) {
+  peer.tcp.close_socket();
+  if (peer.source == psource::tcp_server)
+    statistics.single_outbound_resolved();
+  else {
+    statistics.single_inbound_resolved();
+    inbound_connection_scheduler.send_notification();
+  }
+  delete_peer_connection(peer);
 }
 
 bool PeerConnectionManager::peer_transport_level_connected(PeerConnection& peer) {
@@ -528,6 +541,7 @@ bool PeerConnectionManager::peer_transport_level_connected(PeerConnection& peer)
     peer.tcp.perrno = error;
     return false;
   }
+
   return true;
 }
 
@@ -565,12 +579,11 @@ void PeerConnectionManager::handle_peer_application_level_handshake(PeerConnecti
       peer.recv_buffer, torrent.get_info_hash_bytes(), peer.contact.peer_id
     );
 
-    if ( !handshake_decode.complete)
+    if ( !handshake_decode.complete )
       return;
 
     if ( !handshake_decode.valid ) {
-      peer.tcp.close_socket();
-      delete_peer_connection(peer);
+      hard_delete_peer_connection(peer);
       return;
     }
 
@@ -608,7 +621,7 @@ void PeerConnectionManager::handle_peer_transport_level_initiations(PeerConnecti
 
   if (event & ev::WRITE)
   {
-    if ( !peer_transport_level_connected(peer)) {
+    if ( !peer_transport_level_connected(peer) ) {
       handle_peer_failure(peer);
       return;
     }
@@ -638,10 +651,11 @@ void PeerConnectionManager::peer_socket_callback(ev::io& sw, int event) {
   auto& manager =
     * static_cast<PeerConnectionManager*> (ev_userdata(sw.loop.raw_loop));
 
-  assert(peer.state != pstate::CONNECTED);
+  assert(peer.state  != pstate::CONNECTED);
+  assert(peer.source != psource::null);
 
   if (manager.statistics.has_met_connection_quota()) {
-    manager.delete_peer_connection(peer);                                    return;
+    manager.hard_delete_peer_connection(peer);                               return;
   }
 
   if (event & ev::ERROR) {
@@ -649,12 +663,12 @@ void PeerConnectionManager::peer_socket_callback(ev::io& sw, int event) {
   }
 
   switch (peer.state) {
-    case pstate::DISCOVERED: case pstate::DISCONNECTED: case pstate::FAILED:
+    case pstate::TRANSPORT: case pstate::DISCONNECTED: case pstate::FAILED:
       manager.handle_peer_transport_level_initiations(peer, event);          return;
     case pstate::HANDSHAKE:
       manager.handle_peer_application_level_handshake(peer, event);          return;
     case pstate::null: default:
-      manager.delete_peer_connection(peer);                                  return;
+      manager.hard_delete_peer_connection(peer);                             return;
   }
 }
 
@@ -684,6 +698,7 @@ void PeerConnectionManager::stop_connection_watchers(PeerConnection& peer) {
 void PeerConnectionManager::handle_peer_connection_and_dispatch(PeerConnection& peer) {
   peer.state = pstate::CONNECTED;
   stop_connection_watchers(peer);
+  //peer.stats.reset();
 
   std::size_t cached_generation = reinterpret_cast<connection_slot*>(&peer)->generation();
   // WARNING!! -> remove id paramater no longer needed.

@@ -203,11 +203,10 @@ namespace handshake {
 
       if ( range == peer_id ) {
 
+        if (!peer_id_ref) peer_id_ref.emplace();
+
         if (io_view.size() < 20 ) {
           auto remaining = wraparound_steal(prepare, 20 - io_view.size());
-
-          if (!peer_id_ref.has_value()) peer_id_ref.emplace();
-
           std::ranges::copy(io_view, peer_id_ref.value().begin());
           std::ranges::copy(remaining, peer_id_ref.value().begin() + io_view.size());
           break;

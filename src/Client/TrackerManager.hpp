@@ -45,9 +45,9 @@ struct tracker_context_t {
 };
 
 struct tracker_timers_t {
-  int minimum_duration{0};
+  std::int64_t minimum_duration{0};
   ev::timer minimum {};
-  int maximum_duration{0};
+  std::int64_t maximum_duration{0};
   ev::timer maximum {};
   timer_count type {timer_count::one};
 

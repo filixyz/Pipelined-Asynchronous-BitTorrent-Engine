@@ -25,6 +25,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -51,10 +52,13 @@ namespace bendecoded {
   using dictionary  = typename std::map<std::string, Bendata>;
 }
 
+
 class Bendata {
 
-  std::variant<std::int64_t, std::string, std::vector<Bendata>,std::map<std::string, Bendata>> actual_value;
-  std::string bencode;
+  std::variant <
+    std::int64_t, std::string, std::vector<Bendata>, std::map<std::string, Bendata>
+  > actual_value;
+
   bencode_type _t;
 
 public:
@@ -64,34 +68,41 @@ public:
   Bendata(std::string string);
   explicit Bendata(bencode_type type);
 
-  template <typename T> T &get_as();
-  template <typename T> const T &get_as() const;
-  bencode_type type() const;
-  const std::string &get_encode() const;
+  template <typename T> T &get_as() {
+    return std::get<T>(actual_value);
+  }
 
-  static bool decode_integer(std::istream &, Bendata &);
-  static bool decode_string(std::istream &, Bendata &);
-  static bool decode_dictionary(std::istream &, Bendata &);
-  static bool decode_list(std::istream &, Bendata &);
-  static std::string encode(std::int64_t);
-  static std::string encode(const std::string&);
-  static std::string encode_to_list(std::vector<std::string>);
-  static std::string encode_to_dict(std::vector<BenDictPair>);
+  template <typename T> const T &get_as() const {
+    return std::get<T>(actual_value);
+  }
+
+  bencode_type type() const;
+
+  friend struct decoders;
 
   friend std::ostream &operator<<(std::ostream &os, const Bendata &ben_object);
 };
 
-template <typename T> T &Bendata::get_as() {
-  T &value = std::get<T>(actual_value);
-  return value;
-}
 
-template <typename T> const T &Bendata::get_as() const {
-  const T &value = std::get<T>(actual_value);
-  return value;
-}
+struct decode_t {
+  std::optional<Bendata> result;
+  std::size_t length{0};
+};
 
-std::optional<Bendata> bendecode(std::istream &);
+struct decoders {
+  static decode_t integer(std::string_view);
+  static decode_t string(std::string_view);
+  static decode_t dictionary(std::string_view);
+  static decode_t list(std::string_view);
+  static decode_t any(std::string_view);
+};
+
+struct encoders {
+  static std::string integer(std::int64_t);
+  static std::string string(const std::string&);
+  static std::string list(std::vector<std::string>);
+  static std::string dictionary(std::vector<BenDictPair>);
+};
 
 // map containers lookup helper
 template<class M> auto* find(const typename M::key_type& key, M& map ) {

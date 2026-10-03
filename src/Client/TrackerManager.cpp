@@ -180,7 +180,7 @@ int TrackerManager::get_retry_seconds(const Tracker* trkr) {
 void TrackerManager::arm_timer(ev::timer& timer, double duration) {
   timer.set(duration);
   timer.start();
-  // std::cout << " :duration set "  << duration << '\n';
+  //std::cout << " :duration set "  << duration << '\n';
 }
 
 void TrackerManager::disarm_timer(ev::timer& timer) {

@@ -147,7 +147,8 @@ class PeerConnectionManager { friend class inbound_scheduler_t;
   bool connect(PeerConnection&);
   bool peer_transport_level_connected(PeerConnection&);
   void deregister_from_map(PeerConnection&);
-  void delete_peer_connection(PeerConnection&);
+  void delete_peer_connection(PeerConnection&); // doesn't close file descriptor while deleting
+  void hard_delete_peer_connection(PeerConnection&); // closes file descriptor while deleting
 
   void handle_peer_failure(PeerConnection&);
   void handle_peer_application_level_handshake(PeerConnection&, int event);

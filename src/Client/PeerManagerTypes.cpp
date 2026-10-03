@@ -106,6 +106,7 @@ void peer_nonblock_tcp::close_socket() {
   if (__socket != -1) {
     close(__socket);
     __socket = -1;
+
   }
   perrno = -1;
   std::memset(&ephemereal_hdr, 0, sizeof(ephemereal_hdr));
@@ -123,7 +124,7 @@ int peer_nonblock_tcp::get_socket() {
   if (__socket!=-1 || __sock ==-1)
     return false;
   __socket = __sock;
-  return false;
+  return true;
 }
 
 int peer_nonblock_tcp::get_errno() {

@@ -13,7 +13,7 @@ private:
   const std::map<std::string, Bendata> *info_hash;
   std::array<std::byte, 20> info_hash_byte;
   std::int64_t file_size {0};
-  void check_validity_of_transcribe() const;
+  bool is_valid_metainfo() const;
   void initialize_info_hash_bytes();
   void compute_download_size();
 

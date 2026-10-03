@@ -4,22 +4,26 @@
 #include <cstdint>
 #include <cwctype>
 #include <ios>
+#include <optional>
 #include <string>
 
 bool noexcept_stoi(std::string str, std::int64_t &result) {
   try {
-    result = std::stoll(str);
-  } catch (...) {
+    result = std::stoll(str); // replace with std::from_chars later
+  } catch (...) {;
     return error_with_reason("noexcept_stoi failed");
   }
   return true;
 }
 
 bool Bendata::decode_string(std::istream &of, Bendata &data) {
+
   char c;
   std::string size;
-  while (of >> c && c != ':')
+  while (of >> c && c != ':') {
     size += c;
+  }
+
   std::int64_t size_int;
   if (!noexcept_stoi(size, size_int))
     return false;
@@ -57,28 +61,19 @@ bool Bendata::decode_integer(std::istream &of, Bendata &data) {
   return true;
 }
 
-// peek_skipws returns-> ifstream::peek()
-//    peeks into stream and if a whitsepace is there
-//    it reads "skips" it by reading it and discarding
-//    its value.
-auto peek_skipws(std::istream &of) {
-  while (std::iswspace(of.peek()))
-    of.get(); // read that whitespace
-  return of.peek();
-}
 
 bool get_bendata_from_stream(std::istream &of, Bendata &data) {
 
-  switch (peek_skipws(of)) {
+  switch (of.peek()) {
 
   case bencode_type::integer:
-    if (!Bendata::decode_integer(of, data))     return error_with_reason("bendecode_integer failed");     break;
+    if (!Bendata::decode_integer(of, data))     return error_with_reason("bendecode_integer failed");    break;
   case bencode_type::dictionary:
-    if (!Bendata::decode_dictionary(of, data))  return error_with_reason("bendecode_dictionary failed");  break;
+    if (!Bendata::decode_dictionary(of, data))  return error_with_reason("bendecode_dictionary failed"); break;
   case bencode_type::list:
-    if (!Bendata::decode_list(of, data))        return error_with_reason("bendecode_list failed");        break;
+    if (!Bendata::decode_list(of, data))        return error_with_reason("bendecode_list failed");       break;
   default:
-    if (!Bendata::decode_string(of, data))      return error_with_reason("bendecode_string failed");      break;
+    if (!Bendata::decode_string(of, data))      return error_with_reason("bendecode_string failed");     break;
 
   }
   return true;
@@ -89,7 +84,7 @@ bool Bendata::decode_list(std::istream &of, Bendata &data) {
   Bendata new_list {bencode_type::list};
   bendecoded::list &ref_list = new_list.get_as<bendecoded::list>();
   new_list.bencode += read_delimeter(of);
-  while (peek_skipws(of) != bencode_delimeter) {
+  while (of.peek() != bencode_delimeter) {
     Bendata new_data{};
     if (!get_bendata_from_stream(of, new_data))
       return false;
@@ -111,14 +106,14 @@ bool Bendata::decode_dictionary(std::istream &of, Bendata &data) {
   Bendata new_dict {bencode_type::dictionary};
   bendecoded::dictionary &ref_dic = new_dict.get_as<bendecoded::dictionary>();
   new_dict.bencode += read_delimeter(of);
-  while (peek_skipws(of) != bencode_delimeter) {
+  while (of.peek() != bencode_delimeter) {
     Bendata new_key{};
     Bendata new_data{};
     if (!get_benkey_from_stream(of, new_key))
       return false;
     if (!get_bendata_from_stream(of, new_data))
       return false;
-    new_dict.bencode += new_key.bencode + new_data.bencode;  // if error check here.
+    new_dict.bencode += new_key.bencode + new_data.bencode;
     ref_dic[new_key.get_as<bendecoded::string>()] = std::move(new_data);
   }
   new_dict.bencode += read_delimeter(of);
@@ -126,9 +121,11 @@ bool Bendata::decode_dictionary(std::istream &of, Bendata &data) {
   return true;
 }
 
-Bendata bendecode(std::istream &file) {
+std::optional<Bendata> bendecode(std::istream &file) {
+
   file >> std::noskipws;
   Bendata parsed;
-  if (!get_bendata_from_stream(file, parsed)) throw Invalid_Bencode_File{};
-  return parsed;
+  if ( get_bendata_from_stream(file, parsed) ) return parsed;
+  return std::nullopt;
+
 }
