@@ -1,9 +1,9 @@
 #include "Bencode.hpp"
 #include <cstdint>
 
-Bendata::Bendata(std::int64_t number) : actual_value{number}, _t{bencode_type::integer} {}
+Bendata::Bendata(std::int64_t number) : actual_value{number}  {}
 
-Bendata::Bendata(std::string string) : actual_value{string}, _t{bencode_type::string} {}
+Bendata::Bendata(std::string string) : actual_value{string}   {}
 
 Bendata::Bendata(bencode_type type) {
 
@@ -13,7 +13,6 @@ Bendata::Bendata(bencode_type type) {
   case bencode_type::dictionary:  actual_value.emplace<bendecoded::dictionary>(); break;
   case bencode_type::list:        actual_value.emplace<bendecoded::list>();       break;
   }
-  _t = type;
 
 }
 

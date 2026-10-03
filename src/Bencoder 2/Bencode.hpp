@@ -46,12 +46,33 @@ struct BenDictPair {
 class Bendata;
 
 namespace bendecoded {
-  using string      = typename std::string;
   using integer     = typename std::int64_t;
+  using string      = typename std::string;
   using list        = typename std::vector<Bendata>;
   using dictionary  = typename std::map<std::string, Bendata>;
 }
 
+
+struct source_t {
+
+  std::string_view source;
+  std::size_t cursor{0};
+
+  auto undecoded() {
+    return source.substr(cursor);
+  }
+
+  std::string_view::const_reference undecoded_header() {
+    return undecoded().front();
+  }
+
+
+};
+
+struct source_stats_t {
+  std::size_t start;
+  std::size_t size;
+};
 
 class Bendata {
 
@@ -59,7 +80,7 @@ class Bendata {
     std::int64_t, std::string, std::vector<Bendata>, std::map<std::string, Bendata>
   > actual_value;
 
-  bencode_type _t;
+  source_stats_t position_in_source;
 
 public:
 
@@ -90,11 +111,11 @@ struct decode_t {
 };
 
 struct decoders {
-  static decode_t integer(std::string_view);
-  static decode_t string(std::string_view);
-  static decode_t dictionary(std::string_view);
-  static decode_t list(std::string_view);
-  static decode_t any(std::string_view);
+  static decode_t integer(source_t&);
+  static decode_t string(source_t&);
+  static decode_t dictionary(source_t&);
+  static decode_t list(source_t&);
+  static decode_t any(source_t&);
 };
 
 struct encoders {
