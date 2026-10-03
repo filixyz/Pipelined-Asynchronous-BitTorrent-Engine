@@ -4,9 +4,9 @@
 
 namespace ben {
 
-data::data(std::int64_t number) : actual_value{number}  {}
+data::data(std::int64_t number) : actual_value{number} {}
 
-data::data(std::string string) : actual_value{std::move(string)}   {}
+data::data(std::string string) : actual_value{std::move(string)} {}
 
 data::data(encode_type type) {
 

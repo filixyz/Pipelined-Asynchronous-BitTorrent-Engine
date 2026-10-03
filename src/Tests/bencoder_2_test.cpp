@@ -17,9 +17,11 @@ int main(int argc,  char* argv[]) {
   std::string bencode_buffer;
   bencode_buffer.resize(size);
 
+  std::cout << "file size: " << size << " bytes\n";
+
   auto& read_success = file.read(&bencode_buffer[0], size);
 
-  if (!read_success)  std::cerr << "buffer store failed\n";
+  if (!read_success) std::cerr << "buffer store failed\n";
 
   ben::source_t encoded_source { .source=bencode_buffer, .cursor=0 };
   auto decode = ben::decoders::any(encoded_source);
@@ -37,6 +39,6 @@ int main(int argc,  char* argv[]) {
     { reinterpret_cast<const std::byte*>(&bencode_buffer[info_data.position_in_source.start]), info_data.position_in_source.size }
   );
 
-  std::cout << "Hash: " << Hasher::hex_stringify_hash(std::span<const std::byte>(sha1_hash)) << '\n';
+  std::cout << "Info Hash: " << Hasher::hex_stringify_hash(std::span<const std::byte>(sha1_hash)) << '\n';
 
 }
