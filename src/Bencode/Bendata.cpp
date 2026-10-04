@@ -1,4 +1,4 @@
-#include "Bencode.hpp"
+#include "Ben.hpp"
 #include <cstdint>
 #include <variant>
 
@@ -11,11 +11,11 @@ data::data(std::string string) : actual_value{std::move(string)} {}
 data::data(encode_type type) {
 
   switch (type) {
-  case encode_type::integer:     actual_value.emplace<decoded_type::integer>();    break;
-  case encode_type::string:      actual_value.emplace<decoded_type::string>();     break;
-  case encode_type::list:        actual_value.emplace<decoded_type::list>();       break;
-  case encode_type::dictionary:  actual_value.emplace<decoded_type::dictionary>(); break;
-  case encode_type::nothing:     break;
+    case encode_type::integer:     actual_value.emplace<decoded_type::integer>();    break;
+    case encode_type::string:      actual_value.emplace<decoded_type::string>();     break;
+    case encode_type::list:        actual_value.emplace<decoded_type::list>();       break;
+    case encode_type::dictionary:  actual_value.emplace<decoded_type::dictionary>(); break;
+    case encode_type::nothing:     break;
   }
 
 }

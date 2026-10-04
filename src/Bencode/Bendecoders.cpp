@@ -1,10 +1,10 @@
-#include "Bencode.hpp"
+#include "Ben.hpp"
 #include <charconv>
 #include <system_error>
 
 // NOte: This decoders work (according to my tests) but a malicious input
 // can blow the process stack if it contains dictinarys or lists with
-// very deep nests, add a limit death cap later or don't.
+// very deep nests, add a limit death cap later.
 //
 // man i'm tired boss.
 
@@ -37,35 +37,35 @@ namespace {
 
 }
 
-decode_t decoders::string(source_t& encode) {
+decode_t decode::string(source_t& encode) {
 
-  decode_t decode{};
+  decode_t resolve {};
 
   std::size_t encode_begin = encode.cursor;
 
   auto view = encode.undecoded();
 
-  if (view.size() < 2) return decode;
+  if (view.size() < 2) return resolve;
 
   auto seperator_index  = view.find_first_of(':');
   if (seperator_index == view.npos)
-    return decode;
+    return resolve;
 
   auto length_string  = view.substr(0, seperator_index);
   auto string_begin   = seperator_index + 1;
 
   if (length_string.starts_with('-'))
-    return decode;
+    return resolve;
 
   auto declared_size = get_number_if_valid(length_string);
 
-  if (!declared_size ) return decode;
+  if (!declared_size ) return resolve;
 
   // chech if undecoded remaining in stream is enough for decode to actually
   // extract the declared number of bytes this string encode claims to have
 
-  if (auto remaining = view.size() - string_begin; declared_size >= remaining) // if buggy check this
-    return decode;
+  if (auto remaining = view.size() - string_begin; declared_size >= remaining) // if buggy check >= here
+    return resolve;
 
   std::string_view actual_string = view.substr(string_begin, declared_size.value());
 
@@ -73,103 +73,106 @@ decode_t decoders::string(source_t& encode) {
 
   encode.cursor += string_begin + declared_size.value();
 
-  decode = std::move(result);
-  decode.value().position_in_source.start = encode_begin;
-  decode.value().position_in_source.size = encode.cursor - encode_begin;
+  resolve = std::move(result);
+  resolve.value().position_in_source.start = encode_begin;
+  resolve.value().position_in_source.size = encode.cursor - encode_begin;
 
-  return decode;
+  return resolve;
 
 }
 
-decode_t decoders::integer(source_t& encoded) {
+decode_t decode::integer(source_t& encoded) {
 
-  decode_t decode;
+  decode_t resolve;
 
   if (!encoded.undecoded().starts_with(header::integer))
-    return decode;
+    return resolve;
 
   std::size_t encode_begin = encoded.cursor++;
 
   auto end_index = encoded.undecoded().find_first_of(delimeter);
 
   if (end_index == encoded.undecoded().npos)
-    return decode;
+    return resolve;
 
   if (end_index == 0)
-    return decode;
+    return resolve;
 
   auto number_string = encoded.undecoded().substr(0, end_index);
 
   auto decode_number = get_number_if_valid(number_string);
   if (!decode_number)
-    return decode;
+    return resolve;
 
   encoded.cursor += end_index + 1;
 
-  decode = decode_number.value();
-  decode.value().position_in_source.start  = encode_begin;
-  decode.value().position_in_source.size   = encoded.cursor - encode_begin;
+  resolve = decode_number.value();
+  resolve.value().position_in_source.start  = encode_begin;
+  resolve.value().position_in_source.size   = encoded.cursor - encode_begin;
 
-  return decode;
+  return resolve;
 
 }
 
 
-decode_t decoders::any(source_t& encoded) {
+decode_t decode::any(source_t& encoded) {
 
-  decode_t decode;
+  decode_t resolve;
 
   if (encoded.undecoded().empty())
-    return decode;
+    return resolve;
 
   auto header_type = encoded.undecoded().front();
 
   if (header_type == header::integer) {
-    decode = decoders::integer(encoded);
-    if (!decode)
+    resolve = decode::integer(encoded);
+    if (!resolve)
       std::cerr << "integer decode failed\n";
   }
-  else if ( header_type == header::list) {
-    decode = decoders::list(encoded);
-    if (!decode)
+
+  else if (header_type == header::list) {
+    resolve = decode::list(encoded);
+    if (!resolve)
       std::cerr << "list decode failed\n";
   }
-  else if ( header_type == header::dictionary) {
-    decode = decoders::dictionary(encoded);
-    if (!decode)
+
+  else if (header_type == header::dictionary) {
+    resolve = decode::dictionary(encoded);
+    if (!resolve)
       std::cerr << "dictionary decode failed\n";
   }
+
   else {
-    decode = decoders::string(encoded);
-    if (!decode)
+    resolve = decode::string(encoded);
+    if (!resolve)
       std::cerr << "string decode failed\n";
   }
 
-  return decode;
+  return resolve;
 }
 
-decode_t decoders::list(source_t& encode) {
+decode_t decode::list(source_t& encode) {
 
-  decode_t decode;
+  decode_t resolve;
 
   if (auto undecoded = encode.undecoded(); undecoded.empty() or !undecoded.starts_with(header::list))
-    return decode;
+    return resolve;
 
   std::size_t encode_begin = encode.cursor++; // read header
 
-  if (encode.undecoded().empty()) return decode;
+  if (encode.undecoded().empty()) return resolve;
 
-  decode.emplace(encode_type::list);
+  resolve.emplace(encode_type::list);
 
   decoded_type::list& list =
-    decode.value().get_as<decoded_type::list>();
+    resolve.value().get_as<decoded_type::list>();
 
   while ( !encode.undecoded().empty() && encode.undecoded().front() != delimeter ) {
 
-    auto bendecoded = decoders::any(encode);
+    auto bendecoded = decode::any(encode);
 
     if (!bendecoded) {
-      decode.reset();
+      resolve.reset();
       break;
     }
 
@@ -177,54 +180,54 @@ decode_t decoders::list(source_t& encode) {
 
   }
 
-  if (!decode) /* decoded something wrong */ return decode;
+  if (!resolve) /* decoded something wrong */ return resolve;
 
   if ( encode.undecoded().empty()) {
-    decode.reset();
-    return decode;
+    resolve.reset();
+    return resolve;
   }
 
   if ( encode.undecoded().front() != delimeter ) {
-    decode.reset();
-    return decode;
+    resolve.reset();
+    return resolve;
   }
 
   encode.cursor+=1; // read delimeter
 
-  decode.value().position_in_source.start = encode_begin;
-  decode.value().position_in_source.size = encode.cursor - encode_begin;
+  resolve.value().position_in_source.start = encode_begin;
+  resolve.value().position_in_source.size = encode.cursor - encode_begin;
 
-  return decode;
+  return resolve;
 
 }
 
-decode_t decoders::dictionary(source_t& encode) {
+decode_t decode::dictionary(source_t& encode) {
 
-  decode_t decode;
+  decode_t resolve;
 
   if (auto undecoded = encode.undecoded(); undecoded.empty() or !undecoded.starts_with(header::dictionary))
-    return decode;
+    return resolve;
 
   auto encode_begin = encode.cursor++; // read header
 
-  if (encode.undecoded().empty()) return decode;
+  if (encode.undecoded().empty()) return resolve;
 
-  decode.emplace(encode_type::dictionary);
+  resolve.emplace(encode_type::dictionary);
 
   decoded_type::dictionary& dictionary=
-    decode.value().get_as<decoded_type::dictionary>();
+    resolve.value().get_as<decoded_type::dictionary>();
 
   while ( !encode.undecoded().empty() && encode.undecoded().front() != delimeter ) {
 
-    auto bendecoded_key = decoders::string(encode);
+    auto bendecoded_key = decode::string(encode);
     if (!bendecoded_key) {
-      decode.reset();
+      resolve.reset();
       break;
     }
 
-    auto bendecoded_val = decoders::any(encode);
+    auto bendecoded_val = decode::any(encode);
     if (!bendecoded_val) {
-      decode.reset();
+      resolve.reset();
       break;
     }
 
@@ -234,30 +237,42 @@ decode_t decoders::dictionary(source_t& encode) {
     auto [it, unique] = dictionary.try_emplace(std::move(key), std::move(val));
 
     if (!unique) {
-      decode.reset();
+      resolve.reset();
       break;
     }
 
   }
 
-  if (!decode) /* decoded trash somewhere */ return decode;
+  if (!resolve) /* decoded trash somewhere */ return resolve;
 
   if ( encode.undecoded().empty()) {
-    decode.reset();
-    return decode;
+    resolve.reset();
+    return resolve;
   }
 
   if ( encode.undecoded().front() != delimeter ) {
-    decode.reset();
-    return decode;
+    resolve.reset();
+    return resolve;
   }
 
   encode.cursor+=1; // read delimeter
 
-  decode.value().position_in_source.start = encode_begin;
-  decode.value().position_in_source.size = encode.cursor - encode_begin;
+  resolve.value().position_in_source.start = encode_begin;
+  resolve.value().position_in_source.size = encode.cursor - encode_begin;
 
-  return decode;
+  return resolve;
+
+}
+
+decode_t decode::input(std::string_view undecoded) {
+
+  source_t source  = { .source=undecoded, .cursor=0 };
+  decode_t resolve = decode::any(source);
+
+  if (resolve && source.cursor != undecoded.size())
+    resolve.reset();
+
+  return resolve;
 
 }
 

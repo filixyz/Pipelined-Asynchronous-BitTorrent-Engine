@@ -1,4 +1,4 @@
-#include "Bencode.hpp"
+#include "Ben.hpp"
 #include <cstdint>
 #include <string>
 #include <algorithm>

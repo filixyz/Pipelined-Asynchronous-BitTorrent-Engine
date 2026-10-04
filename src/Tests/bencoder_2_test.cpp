@@ -1,4 +1,4 @@
-#include "../Bencoder 2/Bencode.hpp"
+#include "../Bencode/Ben.hpp"
 #include <fstream>
 #include <ios>
 #include "../Client/Hasher.hpp"
@@ -23,11 +23,14 @@ int main(int argc,  char* argv[]) {
 
   if (!read_success) std::cerr << "buffer store failed\n";
 
-  ben::source_t encoded_source { .source=bencode_buffer, .cursor=0 };
-  auto decode = ben::decoders::any(encoded_source);
+  auto decode = ben::decode::input(bencode_buffer);
 
-  if (decode) std::cout << "decode successful\n";
-  else        std::cout << "decode failed\n";
+  if (decode)
+    std::cout << "decode successful\n";
+  else  {
+    std::cerr << "decode failed\n";
+    return 1;
+  }
 
   ben::data* found_value;
   if  ( !(found_value = ben::find("info", decode.value().get_as<ben::decoded_type::dictionary>())) )
@@ -35,8 +38,9 @@ int main(int argc,  char* argv[]) {
 
   auto& info_data = *found_value;
 
+  auto pos_in_src = info_data.get_position_in_source();
   const auto sha1_hash = Hasher::get_sha1 (
-    { reinterpret_cast<const std::byte*>(&bencode_buffer[info_data.position_in_source.start]), info_data.position_in_source.size }
+    { reinterpret_cast<const std::byte*>(&bencode_buffer[pos_in_src.start]), pos_in_src.size }
   );
 
   std::cout << "Info Hash: " << Hasher::hex_stringify_hash(std::span<const std::byte>(sha1_hash)) << '\n';
