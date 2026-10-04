@@ -2,6 +2,12 @@
 #include <charconv>
 #include <system_error>
 
+// NOte: This decoders work (according to my tests) but a malicious input
+// can blow the process stack if it contains dictinarys or lists with
+// very deep nests, add a limit death cap later or don't.
+//
+// man i'm tired boss.
+
 namespace ben  {
 
 namespace {
@@ -55,7 +61,10 @@ decode_t decoders::string(source_t& encode) {
 
   if (!declared_size ) return decode;
 
-  if (auto remaining = view.size() - string_begin; declared_size > remaining)
+  // chech if undecoded remaining in stream is enough for decode to actually
+  // extract the declared number of bytes this string encode claims to have
+
+  if (auto remaining = view.size() - string_begin; declared_size >= remaining) // if buggy check this
     return decode;
 
   std::string_view actual_string = view.substr(string_begin, declared_size.value());
@@ -146,7 +155,7 @@ decode_t decoders::list(source_t& encode) {
   if (auto undecoded = encode.undecoded(); undecoded.empty() or !undecoded.starts_with(header::list))
     return decode;
 
-  std::size_t encode_begin = encode.cursor++;
+  std::size_t encode_begin = encode.cursor++; // read header
 
   if (encode.undecoded().empty()) return decode;
 
@@ -180,7 +189,7 @@ decode_t decoders::list(source_t& encode) {
     return decode;
   }
 
-  encode.cursor+=1;
+  encode.cursor+=1; // read delimeter
 
   decode.value().position_in_source.start = encode_begin;
   decode.value().position_in_source.size = encode.cursor - encode_begin;
@@ -196,7 +205,7 @@ decode_t decoders::dictionary(source_t& encode) {
   if (auto undecoded = encode.undecoded(); undecoded.empty() or !undecoded.starts_with(header::dictionary))
     return decode;
 
-  auto encode_begin = encode.cursor++;
+  auto encode_begin = encode.cursor++; // read header
 
   if (encode.undecoded().empty()) return decode;
 
@@ -243,7 +252,7 @@ decode_t decoders::dictionary(source_t& encode) {
     return decode;
   }
 
-  encode.cursor+=1;
+  encode.cursor+=1; // read delimeter
 
   decode.value().position_in_source.start = encode_begin;
   decode.value().position_in_source.size = encode.cursor - encode_begin;
