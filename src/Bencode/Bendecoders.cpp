@@ -118,13 +118,13 @@ decode_t decode::integer(source_t& encoded) {
 
 decode_t decode::any(source_t& encoded) {
 
-  if (encoded.undecoded().empty())  return std::nullopt;
+  if (encoded.undecoded().empty()) return std::nullopt;
 
   switch (encoded.undecoded().front()) {
-    case header::integer:     return decode::integer(encoded);
-    case header::list:        return decode::list(encoded);
-    case header::dictionary:  return decode::dictionary(encoded);
-    default:                  return decode::string(encoded);
+    case header::integer:    return decode::integer(encoded);
+    case header::list:       return decode::list(encoded);
+    case header::dictionary: return decode::dictionary(encoded);
+    default:                 return decode::string(encoded);
   }
 
 }
