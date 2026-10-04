@@ -1,5 +1,6 @@
 #include "Ben.hpp"
 #include <charconv>
+#include <optional>
 #include <system_error>
 
 // NOte: This decoders work (according to my tests) but a malicious input
@@ -117,38 +118,15 @@ decode_t decode::integer(source_t& encoded) {
 
 decode_t decode::any(source_t& encoded) {
 
-  decode_t resolve;
+  if (encoded.undecoded().empty())  return std::nullopt;
 
-  if (encoded.undecoded().empty())
-    return resolve;
-
-  auto header_type = encoded.undecoded().front();
-
-  if (header_type == header::integer) {
-    resolve = decode::integer(encoded);
-    if (!resolve)
-      std::cerr << "integer decode failed\n";
+  switch (encoded.undecoded().front()) {
+    case header::integer:     return decode::integer(encoded);
+    case header::list:        return decode::list(encoded);
+    case header::dictionary:  return decode::dictionary(encoded);
+    default:                  return decode::string(encoded);
   }
 
-  else if (header_type == header::list) {
-    resolve = decode::list(encoded);
-    if (!resolve)
-      std::cerr << "list decode failed\n";
-  }
-
-  else if (header_type == header::dictionary) {
-    resolve = decode::dictionary(encoded);
-    if (!resolve)
-      std::cerr << "dictionary decode failed\n";
-  }
-
-  else {
-    resolve = decode::string(encoded);
-    if (!resolve)
-      std::cerr << "string decode failed\n";
-  }
-
-  return resolve;
 }
 
 decode_t decode::list(source_t& encode) {
@@ -269,7 +247,7 @@ decode_t decode::input(std::string_view undecoded) {
   source_t source  = { .source=undecoded, .cursor=0 };
   decode_t resolve = decode::any(source);
 
-  if (resolve && source.cursor != undecoded.size())
+  if (resolve && source.cursor != undecoded.size()) // there was trailing junk prefixed
     resolve.reset();
 
   return resolve;
