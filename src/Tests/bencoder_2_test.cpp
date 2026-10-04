@@ -32,9 +32,11 @@ int main(int argc,  char* argv[]) {
     return 1;
   }
 
-  ben::data* found_value;
-  if  ( !(found_value = ben::find("info", decode.value().get_as<ben::decoded_type::dictionary>())) )
+  const ben::data* found_value;
+  if ( !(found_value = ben::find("info", decode.value().get_as<ben::decoded_type::dictionary>())) ) {
     std::cerr << "info key not found\n";
+    return 1;
+  }
 
   auto& info_data = *found_value;
 

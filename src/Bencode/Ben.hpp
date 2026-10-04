@@ -128,7 +128,7 @@ struct encoders {
 };
 
 // map containers lookup helper
-inline auto* find(const decoded_type::dictionary::key_type& key, decoded_type::dictionary& map ) {
+inline auto* find(const decoded_type::dictionary::key_type& key, const decoded_type::dictionary& map ) {
   auto it = map.find(key);
   return it == map.end() ? nullptr : &it->second;
 }

@@ -5,98 +5,140 @@
 #include <span>
 #include "Hasher.hpp"
 
-constexpr int HASH_STRING_LENGTH = 20;
-
 TorrentFile::TorrentFile(const std::filesystem::path pathname) {
 
-  std::ifstream torrent_file{pathname};
-  if (!torrent_file)
-    throw Torrent_File_Not_Found{};
+  std::ifstream torrent_file{pathname, std::ios::in | std::ios::binary | std::ios::ate};
 
-  auto parse = bendecode(torrent_file);
+  if (!torrent_file) throw Torrent_File_Not_Found{};
 
-  if (!parse) throw Invalid_Torrent_File{};
+  std::streamsize size = torrent_file.tellg();
+  torrent_file.seekg(0, std::ios::beg);
 
-  Bendata& parsed_metainfo = parse.value();
+  std::string source_buffer;
+  source_buffer.resize(size);
 
-  if (parsed_metainfo.type() != bencode_type::dictionary) throw Invalid_Torrent_File{};
+  auto& read_state = torrent_file.read(source_buffer.data(), size);
 
-  transcibe = std::move(parsed_metainfo.get_as<bendecoded::dictionary>());
+  if (!read_state) throw Invalid_Torrent_File{};
 
-  if ( auto found_value = find("info", transcibe) ) {
-    auto& info_map = * found_value;
-    info_hash = &(info_map.get_as<bendecoded::dictionary>());
+  auto decode = ben::decode::input(source_buffer);
+
+  if (!decode) throw Invalid_Torrent_File{};
+
+  if (decode.value().type() != ben::encode_type::dictionary) throw Invalid_Torrent_File{};
+
+  transcibe = std::move(decode.value().get_as<ben::decoded_type::dictionary>());
+
+  if (auto found = ben::find("info", transcibe)) { // get info hash
+
+    auto& info_value = *found;
+    auto encode = info_value.get_position_in_source();
+    auto byte_view = std::as_bytes(std::span( &source_buffer[encode.start], encode.size ));
+    info_hash_byte = Hasher::get_sha1( byte_view );
+
+  } else throw Invalid_Torrent_File{};
+
+  if (!parse_transcription()) throw Invalid_Torrent_File {};
+
+}
+
+bool TorrentFile::parse_transcription() {
+
+  if (auto found = ben::find( "length", info_map() )) {
+    auto& length = *found;
+    is_file = true;
+    download_size = length.get_as<ben::decoded_type::integer>();
+    return true;
   }
-  else throw Invalid_Torrent_File{};
 
-  if (!is_valid_metainfo()) throw Invalid_Torrent_File {};
-
-  compute_download_size();
-  initialize_info_hash_bytes();
-
-}
-
-void TorrentFile::initialize_info_hash_bytes() {
-  std::string_view info_key = get_info_key();
-  const std::span<const std::byte> hash_byte_view(reinterpret_cast<const std::byte*>(info_key.data()), info_key.size());
-  info_hash_byte = Hasher::get_sha1(hash_byte_view);
-}
-
-void TorrentFile::compute_download_size() {
-  if ( torrent_is_file() )
-    file_size = info_hash->find("length")->second.get_as<bendecoded::integer>();
-  else {
-    auto& files = info_hash->find("files")->second.get_as<bendecoded::list>();
-    for (auto& file : files) {
-      file_size += file.get_as<bendecoded::dictionary>().find("length")->second.get_as<bendecoded::integer>();
+  else if ( auto found = ben::find( "files", info_map() ) ) {
+    is_file = false;
+    auto files = (*found).get_as<ben::decoded_type::list>();
+    for ( auto& file : files ) {
+      auto file_map = file.get_as<ben::decoded_type::dictionary>();
+      if ( auto found = ben::find("length", file_map) )
+        download_size += (*found).get_as<ben::decoded_type::integer>();
+      else return false;
     }
+    return true;
   }
-}
 
-bool TorrentFile::is_valid_metainfo() const {
-  // implement later
-  return true;
+  return false;
+
 }
 
 std::vector<std::string_view> TorrentFile::get_tracker_urls() const {
+
   std::vector<std::string_view> trackers;
-  trackers.push_back( transcibe.find("announce")->second.get_as<bendecoded::string>() );
-  if ( transcibe.contains("announce-list") ) {
-    const std::vector<Bendata>& announce_list = transcibe.find("announce-list")->second.get_as<bendecoded::list>();
-    for (const Bendata& bencoded_url : announce_list)
-      for (const Bendata& list : bencoded_url.get_as<bendecoded::list>())
-        trackers.push_back(list.get_as<bendecoded::string>());
+
+  if ( auto found = ben::find( "announce", transcibe) ) {
+    auto& announce_url = (*found).get_as<ben::decoded_type::string>();
+    trackers.push_back(announce_url);
   }
+
+  if ( auto found = ben::find( "announce-list", transcibe) ) {
+
+    auto& url_pack = (*found).get_as<ben::decoded_type::list>();
+
+    for (const auto& url_list : url_pack)
+    for (const auto& url : url_list.get_as<ben::decoded_type::list>())
+      trackers.push_back(url.get_as<ben::decoded_type::string>());
+
+  }
+
   return trackers;
+
 }
 
-std::string_view TorrentFile::get_info_key() const {
-  return transcibe.find("info")->second.get_encode();
-}
 std::string_view TorrentFile::get_torrent_name() const {
-  return info_hash->find("name")->second.get_as<bendecoded::string>();
+
+  return
+    (*info_map().find("name"))
+    .second
+    .get_as<ben::decoded_type::string>();
+
 }
+
 std::int64_t TorrentFile::get_piece_length() const {
-  return info_hash->find("piece length")->second.get_as<bendecoded::integer>();
+
+  return
+    (*info_map().find("piece length"))
+    .second
+    .get_as<ben::decoded_type::integer>();
+
+}
+
+const ben::decoded_type::dictionary& TorrentFile::info_map() const {
+
+  return
+    (*transcibe.find("info"))
+    .second
+    .get_as<ben::decoded_type::dictionary>();
+
 }
 
 std::string_view TorrentFile::get_piece_hash(int index) const {
-  const std::string &pieces_hash =
-      info_hash->find("pieces")->second.get_as<bendecoded::string>();
-  int hash_index = index * HASH_STRING_LENGTH;
-  return std::string_view(&pieces_hash[hash_index], HASH_STRING_LENGTH);
+
+  constexpr static std::size_t hash_length = 20;
+
+  const auto& piece_hashes = (*info_map().find("pieces"))
+    .second
+    .get_as<ben::decoded_type::string>();
+
+  int hash_index = index * hash_length;
+
+  return std::string_view(&piece_hashes[hash_index], hash_length);
+
 }
 
 bool TorrentFile::torrent_is_file() const {
-  auto end_itr = info_hash->end();
-  auto file_itr = info_hash->find("length");
-  return file_itr != end_itr ? true : false;
+  return is_file;
 }
 
 std::int64_t TorrentFile::get_download_size() const {
-  return file_size;
+  return download_size;
 }
 
-std::span<const std::byte> TorrentFile::get_info_hash_bytes() const {
+std::span<const std::byte> TorrentFile::get_info_hash() const {
   return info_hash_byte;
 }
