@@ -13,10 +13,12 @@ class TorrentFile {
   std::array<std::byte, 20> info_hash_byte;
   bool is_file{};
   std::int64_t download_size {0};
+  std::size_t piece_count{0};
 
   bool parse_transcription();
 
   const ben::decoded_type::dictionary& info_map() const;
+  const ben::decoded_type::string& pieces() const;
 
 public:
 
@@ -32,6 +34,7 @@ public:
   bool torrent_is_file() const;
   std::int64_t get_download_size() const;
   std::span<const std::byte> get_info_hash() const;
+  std::size_t get_piece_count() const;
 
 };
 

@@ -44,26 +44,52 @@ TorrentFile::TorrentFile(const std::filesystem::path pathname) {
 
 bool TorrentFile::parse_transcription() {
 
+  if (
+
+    !info_map().contains("name")           and
+    !info_map().contains("pieces")         and
+    !info_map().contains("piece length")
+
+  ) return false;
+
   if (auto found = ben::find( "length", info_map() )) {
-    auto& length = *found;
+
     is_file = true;
+    auto& length = *found;
     download_size = length.get_as<ben::decoded_type::integer>();
-    return true;
+
   }
 
   else if ( auto found = ben::find( "files", info_map() ) ) {
+
     is_file = false;
     auto files = (*found).get_as<ben::decoded_type::list>();
     for ( auto& file : files ) {
       auto file_map = file.get_as<ben::decoded_type::dictionary>();
+
       if ( auto found = ben::find("length", file_map) )
         download_size += (*found).get_as<ben::decoded_type::integer>();
       else return false;
+
+      if ( !file_map.contains("path") ) return false;
     }
-    return true;
+
   }
 
-  return false;
+  else return false;
+
+  if (pieces().length() % 20 != 0) return false;
+
+  piece_count = pieces().length()/20;
+
+  // validate that all pieces correllate mathematically
+  //
+  auto ceil_div = [](std::size_t a, std::size_t b){ return a/b + (a%b!=0); };
+
+  if (ceil_div(download_size, get_piece_length()) != piece_count)
+    return false;
+
+  return true;
 
 }
 
@@ -87,6 +113,15 @@ std::vector<std::string_view> TorrentFile::get_tracker_urls() const {
   }
 
   return trackers;
+
+}
+
+const ben::decoded_type::string& TorrentFile::pieces() const {
+
+  return
+    (*info_map().find("pieces"))
+    .second
+    .get_as<ben::decoded_type::string>();
 
 }
 
@@ -121,9 +156,7 @@ std::string_view TorrentFile::get_piece_hash(int index) const {
 
   constexpr static std::size_t hash_length = 20;
 
-  const auto& piece_hashes = (*info_map().find("pieces"))
-    .second
-    .get_as<ben::decoded_type::string>();
+  const auto& piece_hashes = pieces();
 
   int hash_index = index * hash_length;
 
@@ -141,4 +174,8 @@ std::int64_t TorrentFile::get_download_size() const {
 
 std::span<const std::byte> TorrentFile::get_info_hash() const {
   return info_hash_byte;
+}
+
+std::size_t TorrentFile::get_piece_count() const {
+  return piece_count;
 }
