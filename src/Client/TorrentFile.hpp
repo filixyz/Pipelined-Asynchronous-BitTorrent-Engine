@@ -1,6 +1,7 @@
 #ifndef TORRENT_FILE
 #define TORRENT_FILE
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <array>
@@ -30,7 +31,7 @@ public:
   std::vector<std::string_view> get_tracker_urls() const;;
   std::string_view get_torrent_name() const;
   std::int64_t get_piece_length() const;
-  std::string_view get_piece_hash(int index) const;
+  std::string_view get_piece_hash(std::size_t index) const;
   bool torrent_is_file() const;
   std::int64_t get_download_size() const;
   std::span<const std::byte> get_info_hash() const;

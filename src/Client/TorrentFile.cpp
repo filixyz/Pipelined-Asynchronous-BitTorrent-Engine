@@ -1,5 +1,7 @@
 #include "TorrentFile.hpp"
+#include "utils.hpp"
 #include "../Errorhandlers/BittorentErrors.hpp"
+#include <cassert>
 #include <cstdint>
 #include <fstream>
 #include <span>
@@ -83,11 +85,8 @@ bool TorrentFile::parse_transcription() {
   piece_count = pieces().length()/20;
 
   // validate that all pieces correllate mathematically
-  //
-  auto ceil_div = [](std::size_t a, std::size_t b){ return a/b + (a%b!=0); };
 
-  if (ceil_div(download_size, get_piece_length()) != piece_count)
-    return false;
+  if (utils::ceil_div(download_size, get_piece_length()) != piece_count)  return false;
 
   return true;
 
@@ -152,7 +151,9 @@ const ben::decoded_type::dictionary& TorrentFile::info_map() const {
 
 }
 
-std::string_view TorrentFile::get_piece_hash(int index) const {
+std::string_view TorrentFile::get_piece_hash(std::size_t index) const {
+
+  assert( index < piece_count );
 
   constexpr static std::size_t hash_length = 20;
 
