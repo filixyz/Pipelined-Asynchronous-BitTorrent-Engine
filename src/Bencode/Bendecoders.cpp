@@ -120,25 +120,11 @@ decode_t decode::any(source_t& encoded) {
 
   if (encoded.undecoded().empty()) return std::nullopt;
 
-  decode_t resolve;
-
   switch (encoded.undecoded().front()) {
-    case header::integer:
-      resolve =  decode::integer(encoded);
-      if (!resolve) std::cout << "integer parse failed\n";
-      return resolve;
-    case header::list:
-      resolve =  decode::list(encoded);
-      if (!resolve) std::cout << "list parse failed\n";
-      return resolve;
-    case header::dictionary:
-      resolve = decode::dictionary(encoded);
-      if (!resolve) std::cout << "dictionary parse failed\n";
-      return resolve;
-    default:
-      resolve =  decode::string(encoded);
-      if (!resolve) std::cout << "string parse failed\n";
-      return resolve;
+    case header::integer:       return decode::integer(encoded);
+    case header::list:          return decode::list(encoded);
+    case header::dictionary:    return decode::dictionary(encoded);
+    default:                    return decode::string(encoded);
   }
 
 }
