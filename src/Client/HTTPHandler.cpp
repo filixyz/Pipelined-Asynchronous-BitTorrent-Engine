@@ -6,12 +6,12 @@
 #include <curl/multi.h>
 #include <ev++.h>
 #include <ev.h>
-#include <iostream>
 
 HTTPRequest::HTTPRequest(): user_space{} {
   connection = new_easy(user_space);
   curl_easy_setopt(connection, CURLOPT_PRIVATE, this);
 };
+
 HTTPRequest::~HTTPRequest() {
   curl_easy_cleanup(connection);
 }
@@ -36,6 +36,7 @@ void HTTPHandler::escape_byte_string(std::string& url) {
 }
 
 CURL* HTTPHandler::new_easy(network_data& user_field) {
+
   CURL* newE = curl_easy_init();
   curl_easy_setopt(newE, CURLOPT_WRITEFUNCTION, easy_callback);
   curl_easy_setopt(newE, CURLOPT_WRITEDATA, &user_field);
@@ -44,8 +45,10 @@ CURL* HTTPHandler::new_easy(network_data& user_field) {
   curl_easy_setopt(newE, CURLOPT_TIMEOUT, 30L); // total time before transaction is terminated: both connection phase and response phase (i think)
   curl_easy_setopt(newE, CURLOPT_LOW_SPEED_LIMIT, 1L);
   curl_easy_setopt(newE, CURLOPT_LOW_SPEED_TIME, 10L);
-  /**EXPERIMENTAL**/curl_easy_setopt(newE, CURLOPT_CONNECTTIMEOUT, 5L);// time limit for connection to tracker; aborts transaction if limit approached
+  /**EXPERIMENTAL**/
+  curl_easy_setopt(newE, CURLOPT_CONNECTTIMEOUT, 5L);// time limit for connection to tracker; aborts transaction if limit approached
   return newE;
+
 }
 
 void HTTPHandler::add_request(HTTPRequest* request) {
@@ -66,34 +69,50 @@ void HTTPHandler::chk_finished(CURLM* multi) {
   int msg_left;
 
   while(( msg=curl_multi_info_read(multi, &msg_left) )) {
-    if(msg->msg != CURLMSG_DONE)
+
+    if( (*msg).msg != CURLMSG_DONE )
       continue;
 
-    CURL* easy = msg->easy_handle;
+    CURL* easy = (*msg).easy_handle;
     HTTPRequest* request;
     curl_easy_getinfo(easy, CURLINFO_PRIVATE, &request);
-    CURLcode result = msg->data.result;
+
     long http_res_code;
     curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &http_res_code);
 
-    if(result == CURLE_OK && http_res_code==200)
-      request->do_on_success();
-    else // Else block might treat trackers with redirects (http response code 3XX) as failures (fixed)
-      request->do_on_failure();
+    // Else block might treat trackers with redirects (http response code 3XX) as failures (fixed)
+
+    if (CURLcode result = (*msg).data.result; result == CURLE_OK && http_res_code==200)
+      (*request).do_on_success();
+    else
+      (*request).do_on_failure();
+
+    (*request).user_space.data.clear();
+
     curl_multi_remove_handle(multi, easy);
+
   }
 
 }
 
 // handle networks events in the supplied
 // socket.data is "this" pointer of current HttpHandler object'
+
 void HTTPHandler::drive_sockt(ev::io& socket, int revents) {
 
-  auto actions = ( revents&ev::READ?CURL_CSELECT_IN:0 ) | ( revents&ev::WRITE?CURL_CSELECT_OUT:0 );
-  HTTPHandler* http = static_cast<HTTPHandler*>(socket.data);
-  CURLMcode cRes = curl_multi_socket_action(http->multi, socket.fd, actions, &http->actives);
-  (void)cRes;// code to handle cRes Goes here
-  chk_finished(http->multi);;
+  auto actions =
+    (revents & ev::READ)  ? CURL_CSELECT_IN   :0  |
+    (revents & ev::WRITE) ? CURL_CSELECT_OUT  :0
+  ;
+
+  HTTPHandler& http = * static_cast<HTTPHandler*>(socket.data);
+
+  CURLMcode cRes = curl_multi_socket_action ( http.multi, socket.fd, actions, &http.actives );
+
+  // code to handle cRes Goes here
+  (void)cRes;
+
+  chk_finished(http.multi);
 
 }
 
@@ -102,23 +121,40 @@ void HTTPHandler::drive_sockt(ev::io& socket, int revents) {
 // 1, Store this into the .data member of the ev::timer object so can be accessed here when its callback is invoked
 // 2. Pointer arithmetics with C STL offset(type_name, type_member_name)
 // will be going with once since easier to think about
+
 void HTTPHandler::drive_timer(ev::timer& timer, int revents) {
 
   (void) revents;
-  HTTPHandler* http = static_cast<HTTPHandler*>(timer.data);
-  CURLMcode cRes = curl_multi_socket_action(http->multi, CURL_SOCKET_TIMEOUT, 0, &http->actives);
-  (void) cRes;
+
+  HTTPHandler& http = * static_cast<HTTPHandler*>(timer.data);
+
+  CURLMcode cRes =
+    curl_multi_socket_action(http.multi, CURL_SOCKET_TIMEOUT, 0, &http.actives);
+
   // code to handle cRes Goes here
-  chk_finished(http->multi);
+  (void) cRes;
+
+  chk_finished(http.multi);
 
 }
 
 size_t HTTPHandler::easy_callback(const char* data, size_t size, size_t datalen, void *user_data) {
 
-  network_data *mem = (network_data *) (user_data);
-  if (!mem) return 0;
-  mem->data += data;
-  mem->size += datalen;
+  network_data* user = static_cast<network_data*>(user_data);
+
+  if (!user) return 0;
+
+  // Fixed Bug: was concatenting via std::string +=, which treats a pointer as c string
+  // string will concatante but trunctate at the first 0x0 byte it encounters since that
+  // signals the end of an native c-string, this was causeing my tracker managing layer
+  // to intercept truncated bencode responses from trackers which failed to ben::decode
+  // turns out my previous naive bencode and my currrent rewrite were all workin accurately
+  // all along the bug was here. Fixed by replacing string::+= with string::append(ptr, len)
+  // have'nt tested fix.
+
+  (*user).data.append(data, size * datalen);
+  (*user).size += datalen;
+
   return size * datalen;
 
 }
@@ -139,11 +175,17 @@ void HTTPHandler::add_socket(curl_socket_t fd, ev::io* watcher, CURL* easy, int 
 
 void HTTPHandler::set_socket(curl_socket_t fd, ev::io* watcher, int what) {
 
-  auto actions = (what & CURL_POLL_IN ? ev::READ : 0) | (what & CURL_POLL_OUT ? ev::WRITE : 0);
-  if (actions==0) return;
-  if (watcher->active) watcher->stop();
-  watcher->set(fd, actions);
-  watcher->start();
+  auto actions =
+    (what & CURL_POLL_IN)  ? ev::READ  : 0 |
+    (what & CURL_POLL_OUT) ? ev::WRITE : 0
+  ;
+
+  if ( actions == 0 ) return;
+
+  if ( (*watcher).active ) (*watcher).stop();
+
+  (*watcher).set(fd, actions);
+  (*watcher).start();
 
 }
 
@@ -154,6 +196,7 @@ void HTTPHandler::set_socket(curl_socket_t fd, ev::io* watcher, int what) {
 // clientp  in our context is a pointer to the HTTPHandler object
 // socketp  will be a pointer to the socket watcher;
 //          This is the pointer stored with curl_multi_assign when first creating a socket
+
 int HTTPHandler::socket_callback(CURL *easy, curl_socket_t sockfd, int what, void *clientp, void *socketp) {
 
   HTTPHandler*  httpG = static_cast<HTTPHandler*>(clientp);
@@ -165,13 +208,13 @@ int HTTPHandler::socket_callback(CURL *easy, curl_socket_t sockfd, int what, voi
     remove_socket(socket_watcher);
     return 0;
   }
+
   if (!socketp)
     add_socket(sockfd, socket_watcher, easy, what, httpG);
   else
     set_socket(sockfd, socket_watcher, what);
 
   return 0;
-  ;
 
 }
 
@@ -182,14 +225,18 @@ int HTTPHandler::socket_callback(CURL *easy, curl_socket_t sockfd, int what, voi
 int HTTPHandler::timer_callback(CURLM *multi, long timeout_ms, void *userp) {
 
   (void) multi;
+
   constexpr double ms_per_sec = 1000.0;
-  HTTPHandler* httpG = static_cast<HTTPHandler*>( userp );
-  ev::timer& timer =  httpG->curl_timer;
-  if (timer.active)
-    timer.stop();
-  double timeout = timeout_ms/ms_per_sec;
-  timer.set(timeout);
-  timer.start();
+
+  HTTPHandler& httpG =  * static_cast<HTTPHandler*>( userp );
+  ev::timer& timer   =  httpG.curl_timer;
+
+  if (timer.active) timer.stop();
+
+  double timeout = timeout_ms / ms_per_sec;
+
+  timer.set(timeout); timer.start();
+
   return 0;
 
 }

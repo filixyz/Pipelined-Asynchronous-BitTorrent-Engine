@@ -1,6 +1,5 @@
 #include "ThreadMessageTypes.hpp"
 #include "TrackerManager.hpp"
-#include "../Bencoder/Bencode.hpp"
 #include <arpa/inet.h>
 #include <array>
 #include <cstdint>
@@ -9,13 +8,12 @@
 #include <limits>
 #include <netinet/in.h>
 #include <span>
-#include <sstream>
 #include <string>
 #include <sys/socket.h>
 
 TrackerManager::Tracker::Tracker (TrackerManager& __manager) : HTTPRequest(), manager(__manager) {};
 
-void TrackerManager::Tracker::active_state_handler(bendecoded::dictionary& parse) {
+void TrackerManager::Tracker::active_state_handler(ben::decoded_type::dictionary& parse) {
 
   state = tracker_state_t::active;
 
@@ -31,19 +29,19 @@ void TrackerManager::Tracker::active_state_handler(bendecoded::dictionary& parse
 
   if ( timers.type = timer_count::one; auto interval_value = find("interval", parse) ) {
     auto& interval = *interval_value;
-    timers.maximum_duration = interval.get_as<bendecoded::integer>();
+    timers.maximum_duration = interval.get_as<ben::decoded_type::integer>();
     if (timers.maximum_duration <= 0) timers.maximum_duration = std::int64_t{1800};
   }
 
   if (auto min_interval_value = find("min interval", parse)) {
     auto& min_interval = *min_interval_value;
-    timers.minimum_duration = min_interval.get_as<bendecoded::integer>();
+    timers.minimum_duration = min_interval.get_as<ben::decoded_type::integer>();
     if (timers.minimum_duration > 0)  timers.type = timer_count::two;
   }
 
   if (auto tracker_id_value = find("tracker id", parse)) {
-    auto& tracker_id = *tracker_id_value;
-    tracker_id = tracker_id.get_as<bendecoded::string>();
+    auto& id_response = *tracker_id_value;
+    tracker_id = id_response.get_as<ben::decoded_type::string>();
   }
 
 {
@@ -59,10 +57,10 @@ void TrackerManager::Tracker::active_state_handler(bendecoded::dictionary& parse
 
   auto& parsed_peers = parse["peers"];
 
-  if (parsed_peers.type() == bencode_type::string) {
+  if (parsed_peers.type() == ben::encode_type::string) {
 
     std::span<std::byte> peer_binaries = std::as_writable_bytes (std::span(
-      parsed_peers.get_as<bendecoded::string>()
+      parsed_peers.get_as<ben::decoded_type::string>()
     ));
 
     if (peer_binaries.empty() or peer_binaries.size() % peer4_unit_length != 0) return;
@@ -87,19 +85,19 @@ void TrackerManager::Tracker::active_state_handler(bendecoded::dictionary& parse
     }
   }
 
-  else if (parsed_peers.type() == bencode_type::list) {
+  else if (parsed_peers.type() == ben::encode_type::list) {
 
-    auto& peer_list = parsed_peers.get_as<bendecoded::list>();
+    auto& peer_list = parsed_peers.get_as<ben::decoded_type::list>();
 
     for (auto& peer : peer_list) {
 
-      auto& peer_map = peer.get_as<bendecoded::dictionary>();
+      auto& peer_map = peer.get_as<ben::decoded_type::dictionary>();
 
       peer_contact new_endpoint;
 
       if ( auto found_value = find( "peer id", peer_map ) ) {
 
-        std::string& peer_id = found_value->get_as<bendecoded::string>();
+        const std::string& peer_id = found_value->get_as<ben::decoded_type::string>();
         if (peer_id.size() == 20) {
           new_endpoint.peer_id.emplace();
           std::memcpy(new_endpoint.peer_id.value().data(), peer_id.data(), 20);
@@ -109,7 +107,7 @@ void TrackerManager::Tracker::active_state_handler(bendecoded::dictionary& parse
 
       if ( auto found_value = find( "ip", peer_map )) {
 
-        std::string& peer_addr = found_value->get_as<bendecoded::string>();
+        const std::string& peer_addr = found_value->get_as<ben::decoded_type::string>();
         if (inet_pton(AF_INET, peer_addr.c_str(), &new_endpoint.n_addr) == 1) {
           new_endpoint.is_v6 = false;
         } else if (inet_pton(AF_INET6, peer_addr.c_str(), &new_endpoint.n_addr) == 1) {
@@ -121,7 +119,7 @@ void TrackerManager::Tracker::active_state_handler(bendecoded::dictionary& parse
 
       if ( auto found_value = find( "port", peer_map) ) {
 
-        std::int64_t& peer_port = found_value->get_as<bendecoded::integer>();
+        const std::int64_t peer_port = found_value->get_as<ben::decoded_type::integer>();
 
         if (peer_port < 1 || peer_port > max_port) continue;
 
@@ -199,15 +197,13 @@ void TrackerManager::Tracker::do_on_success() {
     return;
   }
 
-  std::istringstream bencoded_response(user_space.data);
-  auto parse = bendecode(bencoded_response);
+  auto parse = ben::decode::input(user_space.data);
   if (!parse) {
-    //manager.tracker_connections.erase(announce_url.domain_name);
-    std::cout << "failed to parse " << user_space.data << '\n';
+    manager.tracker_connections.erase(announce_url.domain_name);
     return;
   }
 
-  bendecoded::dictionary& parsed_dict = parse.value().get_as<bendecoded::dictionary>();
+  ben::decoded_type::dictionary& parsed_dict = parse.value().get_as<ben::decoded_type::dictionary>();
 
   if (parsed_dict.contains("failure reason"))  {
     // log here.

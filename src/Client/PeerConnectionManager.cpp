@@ -112,7 +112,7 @@ bittorrent_messages::handshake_t PeerConnectionManager::compute_handshake() {
   std::memcpy(&handshake[offset], &bittorrent_messages::protocol_string_length, 1);     offset +=  1;
   std::memcpy(&handshake[offset], &bittorrent_messages::protocol_string, 19);           offset += 19;
   std::memcpy(&handshake[offset], bprotocol::constants::reserved_bytes.data(), 8);      offset +=  8;
-  std::memcpy(&handshake[offset], torrent.get_info_hash_bytes().data(), 20);            offset += 20;
+  std::memcpy(&handshake[offset], torrent.get_info_hash().data(), 20);            offset += 20;
   std::memcpy(&handshake[offset], bprotocol::constants::client_id.data(), 20);          offset += 20;
   return handshake;
 };
@@ -576,7 +576,7 @@ void PeerConnectionManager::handle_peer_application_level_handshake(PeerConnecti
     }
 
     auto handshake_decode = bittorrent_messages::handshake::decode (
-      peer.recv_buffer, torrent.get_info_hash_bytes(), peer.contact.peer_id
+      peer.recv_buffer, torrent.get_info_hash(), peer.contact.peer_id
     );
 
     if ( !handshake_decode.complete )

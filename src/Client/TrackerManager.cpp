@@ -95,7 +95,7 @@ void TrackerManager::populate_manager_space() {
 }
 
 void TrackerManager::initialize_info_hash_byte(TorrentFile& torrent) {
-  tracker_context.escaped_info_hash_byte = Hasher::byte_stringify_hash(torrent.get_info_hash_bytes());
+  tracker_context.escaped_info_hash_byte = Hasher::byte_stringify_hash(torrent.get_info_hash());
   HTTPHandler::escape_byte_string(tracker_context.escaped_info_hash_byte);
 }
 

@@ -65,7 +65,7 @@ decode_t decode::string(source_t& encode) {
   // chech if undecoded remaining in stream is enough for decode to actually
   // extract the declared number of bytes this string encode claims to have
 
-  if (auto remaining = view.size() - string_begin; declared_size >= remaining) // if buggy check >= here
+  if (auto remaining = view.size() - string_begin; declared_size > remaining) // if buggy check >= here: >= was a bug
     return resolve;
 
   std::string_view actual_string = view.substr(string_begin, declared_size.value());
@@ -120,11 +120,25 @@ decode_t decode::any(source_t& encoded) {
 
   if (encoded.undecoded().empty()) return std::nullopt;
 
+  decode_t resolve;
+
   switch (encoded.undecoded().front()) {
-    case header::integer:    return decode::integer(encoded);
-    case header::list:       return decode::list(encoded);
-    case header::dictionary: return decode::dictionary(encoded);
-    default:                 return decode::string(encoded);
+    case header::integer:
+      resolve =  decode::integer(encoded);
+      if (!resolve) std::cout << "integer parse failed\n";
+      return resolve;
+    case header::list:
+      resolve =  decode::list(encoded);
+      if (!resolve) std::cout << "list parse failed\n";
+      return resolve;
+    case header::dictionary:
+      resolve = decode::dictionary(encoded);
+      if (!resolve) std::cout << "dictionary parse failed\n";
+      return resolve;
+    default:
+      resolve =  decode::string(encoded);
+      if (!resolve) std::cout << "string parse failed\n";
+      return resolve;
   }
 
 }

@@ -199,7 +199,7 @@ class TrackerManager::Tracker: public HTTPRequest {
   void do_on_success() override;
   void do_on_failure() override;
 
-  void active_state_handler(bendecoded::dictionary& parsed);
+  void active_state_handler(ben::decoded_type::dictionary& parsed);
   void inactive_state_handler();
 
   void send_to_protocol_space();
