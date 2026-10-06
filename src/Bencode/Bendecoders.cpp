@@ -96,7 +96,7 @@ decode_t decode::integer(source_t& encoded) {
   if (end_index == encoded.undecoded().npos)
     return resolve;
 
-  if (end_index == 0)
+  if (end_index == 0) // meaning source was ´ie´ no integer inbetween: invalid
     return resolve;
 
   auto number_string = encoded.undecoded().substr(0, end_index);
