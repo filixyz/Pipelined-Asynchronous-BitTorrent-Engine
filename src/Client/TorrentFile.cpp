@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstdint>
 #include <fstream>
+#include <optional>
 #include <span>
 #include "Hasher.hpp"
 
@@ -179,4 +180,16 @@ std::span<const std::byte> TorrentFile::get_info_hash() const {
 
 std::size_t TorrentFile::get_piece_count() const {
   return piece_count;
+}
+
+
+std::optional<std::reference_wrapper< const ben::decoded_type::list>> TorrentFile::files() const {
+
+  if (is_file) return std::nullopt;
+
+  return
+    (*info_map().find("files"))
+    .second
+    .get_as<ben::decoded_type::list>();
+
 }

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <array>
+#include <functional>
 #include <span>
 #include "../Bencode/Ben.hpp"
 
@@ -23,7 +24,7 @@ class TorrentFile {
 
 public:
 
-  TorrentFile() = default;
+  TorrentFile() = delete;
   TorrentFile(const std::filesystem::path pathname);
 
 public:
@@ -36,6 +37,7 @@ public:
   std::int64_t get_download_size() const;
   std::span<const std::byte> get_info_hash() const;
   std::size_t get_piece_count() const;
+  std::optional<std::reference_wrapper< const ben::decoded_type::list>> files() const;
 
 };
 

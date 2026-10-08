@@ -5,6 +5,7 @@
 #include <array>
 
 namespace bprotocol::constants {
+
   consteval std::array<char, 20> get_client_id() {
     std::array<char, 20> id;
     const char id_with_null  [21] = "FJ0001-x4Kn8mR2pL9sq";
@@ -12,6 +13,7 @@ namespace bprotocol::constants {
       id[i] = id_with_null[i];
     return id;
   }
+
   inline constexpr std::array <char, 20> client_id = get_client_id();
   inline constexpr std::array <std::uint8_t, 8> reserved_bytes {0};
   inline constexpr std::size_t healthy_peer_count = 50;
@@ -27,4 +29,9 @@ namespace bprotocol::constants {
     constexpr std::size_t connect_timeout = 10;//seconds;
     constexpr std::size_t retry_timeout = 15;//seconds;
   }
+
+  namespace file {
+
+  };
+
 }
