@@ -47,12 +47,15 @@ void FileManager::create_piece_map(TorrentFile & metainfo) {
       // end file initialization here
 
       std::size_t file_byte_offset = 0;
+      std::size_t remaining_size = file_size;
+
       if ( file_size >= prev_piece_remainder && prev_piece_remainder < std::size_t(piece_length) ) {
         piece_map[current_piece].push_back({
           current_fd,
           file_byte_offset,
           prev_piece_remainder
         });
+        remaining_size -= prev_piece_remainder;
         prev_piece_remainder = piece_length;
         ++current_piece;
         ++file_byte_offset;
@@ -62,7 +65,7 @@ void FileManager::create_piece_map(TorrentFile & metainfo) {
       for (
         auto complete_piece_size = file_size / piece_length
         ; file_byte_offset < complete_piece_size
-        ; file_byte_offset++, ++current_piece
+        ; file_byte_offset++, ++current_piece, remaining_size-=piece_length
       ) {
         piece_map[current_piece].push_back({
           current_fd,
@@ -72,13 +75,13 @@ void FileManager::create_piece_map(TorrentFile & metainfo) {
         piece_map[current_piece].shrink_to_fit();
       }
 
-      if ( auto last_piece_size = file_size % piece_length ) {
+      if ( remaining_size ) {
         piece_map[current_piece].push_back({
           current_fd,
           file_byte_offset * piece_length,
-          last_piece_size
+          remaining_size
         });
-        prev_piece_remainder = piece_length - last_piece_size;
+        prev_piece_remainder = piece_length - remaining_size;
       }
 
     }
