@@ -24,17 +24,17 @@ using piece_map_t = typename std::vector<piece_span_t>;
 using incoming_pieces_t = beamable_spsc_t<download_piece_t, 50>;
 using outgoing_pieces_t = beamable_spsc_t<upload_piece_t, 50>;
 
-class FileManager {
+struct FileManager {
 
   piece_map_t piece_map;
-  incoming_pieces_t piece_producer;
-  outgoing_pieces_t& piece_consumer;
+  //incoming_pieces_t piece_producer;
+  //outgoing_pieces_t& piece_consumer;
 
   void create_piece_map(TorrentFile&);
 
-  void store_piece(download_piece_t&);
-  bool retrieve_piece(upload_piece_t&);
+  //void store_piece(download_piece_t&);
+  //bool retrieve_piece(upload_piece_t&);
 
-  FileManager(TorrentFile&);
+  //FileManager(TorrentFile&);
 
 };

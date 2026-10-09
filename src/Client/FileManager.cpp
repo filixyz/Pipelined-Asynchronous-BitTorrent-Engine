@@ -1,6 +1,9 @@
 #include "FileManager.hpp"
+#include <cstdint>
 
 void FileManager::create_piece_map(TorrentFile & metainfo) {
+
+  piece_map.resize(metainfo.get_piece_count());
 
   const auto piece_length = metainfo.get_piece_length();
 
@@ -25,6 +28,8 @@ void FileManager::create_piece_map(TorrentFile & metainfo) {
     std::size_t current_piece = 0;
 
     std::size_t prev_piece_remainder = piece_length;
+
+    int file_index = 0; // for debug.
 
     for ( const auto& file : files ) {
 
@@ -51,25 +56,25 @@ void FileManager::create_piece_map(TorrentFile & metainfo) {
 
       if ( file_size >= prev_piece_remainder && prev_piece_remainder < std::size_t(piece_length) ) {
         piece_map[current_piece].push_back({
-          current_fd,
+          file_index,
           file_byte_offset,
           prev_piece_remainder
         });
         remaining_size -= prev_piece_remainder;
+        file_byte_offset += prev_piece_remainder;
         prev_piece_remainder = piece_length;
         ++current_piece;
-        ++file_byte_offset;
         piece_map[current_piece].shrink_to_fit();
       }
 
       for (
-        auto complete_piece_size = file_size / piece_length
-        ; file_byte_offset < complete_piece_size
-        ; file_byte_offset++, ++current_piece, remaining_size-=piece_length
+        std::size_t complete_piece_size = remaining_size / static_cast<std::size_t>(piece_length), index = 0
+        ; index < complete_piece_size
+        ; file_byte_offset+=piece_length, ++current_piece, remaining_size-=piece_length, ++index
       ) {
         piece_map[current_piece].push_back({
-          current_fd,
-          file_byte_offset * piece_length,
+          file_index,
+          file_byte_offset,
           static_cast<std::size_t>( piece_length )
         });
         piece_map[current_piece].shrink_to_fit();
@@ -77,13 +82,14 @@ void FileManager::create_piece_map(TorrentFile & metainfo) {
 
       if ( remaining_size ) {
         piece_map[current_piece].push_back({
-          current_fd,
-          file_byte_offset * piece_length,
+          file_index,
+          file_byte_offset,
           remaining_size
         });
         prev_piece_remainder = piece_length - remaining_size;
       }
 
+      ++file_index;
     }
 
   }
