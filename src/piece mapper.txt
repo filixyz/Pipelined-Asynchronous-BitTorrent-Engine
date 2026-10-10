@@ -1,0 +1,17 @@
+say i have a piece thats 2mb 
+and have 5 files
+
+1. 4mb -> piece 0, 1            ->  4mb mark -> start: 0
+2. 5mb -> piece 2, 3, 4         ->  9mb mark -> start: 4
+3. 6mb -> piece 4, 5, 6, 7      -> 15mb mark -> start: 9
+4. 7mb -> piece 7, 8, 9, 10     -> 22mb mark -> start: 15
+5. 8mb -> piece 11, 12, 13, 14  -> 30mb mark -> start: 22
+
+total----------------
+  30mb
+
+if i download piece 6 * 2 = 12mb mark,
+this is less than the file 3.
+15 mb mark so file 3 is returned
+
+

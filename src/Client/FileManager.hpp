@@ -30,6 +30,7 @@ struct file_range {
 };
 
 struct piece_map2_t {
+  std::size_t piece_length;
   std::vector<file_range> file_spans;
   void create_file_spans(TorrentFile&);
   std::vector<verified_piece_t> get_piece_files(std::size_t);
