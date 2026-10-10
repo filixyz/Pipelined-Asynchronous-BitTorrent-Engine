@@ -57,16 +57,22 @@ bool TorrentFile::parse_transcription() {
 
   if (auto found = ben::find( "length", info_map() )) {
 
+    if ( info_map().contains("files") ) return false;
+
     is_file = true;
-    auto& length = *found;
-    download_size = length.get_as<ben::decoded_type::integer>();
+    download_size = (*found).get_as<ben::decoded_type::integer>();
+    file_count = 1;
 
   }
 
   else if ( auto found = ben::find( "files", info_map() ) ) {
 
+    if ( info_map().contains("length") ) return false;
+
     is_file = false;
     auto files = (*found).get_as<ben::decoded_type::list>();
+    file_count = files.size();
+
     for ( auto& file : files ) {
       auto file_map = file.get_as<ben::decoded_type::dictionary>();
 
@@ -192,4 +198,9 @@ std::optional<std::reference_wrapper< const ben::decoded_type::list>> TorrentFil
     .second
     .get_as<ben::decoded_type::list>();
 
+}
+
+
+std::size_t TorrentFile::get_file_count() const {
+  return file_count;
 }

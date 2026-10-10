@@ -16,6 +16,7 @@ class TorrentFile {
   bool is_file{};
   std::int64_t download_size {0};
   std::size_t piece_count{0};
+  std::size_t file_count{0};
 
   bool parse_transcription();
 
@@ -38,6 +39,7 @@ public:
   std::span<const std::byte> get_info_hash() const;
   std::size_t get_piece_count() const;
   std::optional<std::reference_wrapper< const ben::decoded_type::list>> files() const;
+  std::size_t get_file_count() const;
 
 };
 

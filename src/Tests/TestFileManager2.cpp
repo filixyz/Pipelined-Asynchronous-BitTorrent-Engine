@@ -9,14 +9,13 @@ int main(int argc, char* argv[]) {
   if (argc != 3) { std::cerr << "give a metainfo file and piece index\n"; return 1; }
 
   TorrentFile tfile{argv[1]};
-  FileManager file;
-  file.piece_map2.create_file_spans(tfile);
+  FileManager disk (tfile);
 
-  std::size_t index = std::stoull(argv[2]);
+  std::size_t piece_index = std::stoull(argv[2]);
 
-  auto p10 = file.piece_map2.get_piece_files(index);
+  auto p10 = disk.piece_map.files_for(piece_index);
 
-  std::cout << "Piece: " << index << " : ";
+  std::cout << "Piece: " << piece_index << " : ";
   for (const auto& file_span: p10) {
     std::cout << "{ " << file_span.file << ", " << file_span.offset << ", " <<  file_span.size << " }";
     std::cout << ", ";
@@ -31,5 +30,6 @@ int main(int argc, char* argv[]) {
   std::cout << "Torrent Piece Hash[1]:\t" << tfile.get_piece_hash(0) << '\n';
   std::cout << "Torrent File?:\t\t" << tfile.torrent_is_file() << '\n';
   std::cout << "Torrent Piece Count:\t" << tfile.get_piece_count() << '\n';
+  std::cout << "Torrent files:\t\t" << tfile.get_file_count() << '\n';
 
 }

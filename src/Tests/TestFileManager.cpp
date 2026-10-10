@@ -8,7 +8,7 @@ int main(int argc, char* argv[]) {
   if (argc != 2) { std::cerr << "give a metainfo file\n"; return 1; }
 
   TorrentFile tfile{argv[1]};
-  FileManager file;
+  FileManager file(tfile);
   file.create_piece_map(tfile);
 
   std::cout << std::boolalpha;
